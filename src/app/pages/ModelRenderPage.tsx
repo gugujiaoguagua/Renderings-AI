@@ -11,6 +11,7 @@ interface PendingImage {
   image: ImageData;
   name: string;
   size: number;
+  dataUrl?: string;
 }
 
 function formatBytes(bytes: number) {
@@ -55,7 +56,7 @@ export function ModelRenderPage() {
 
     let invalidTypeCount = 0;
     let tooLargeCount = 0;
-    const accepted: PendingImage[] = [];
+    const accepted: { file: File; image: ImageData; name: string; size: number }[] = [];
 
     const baseTime = Date.now();
     limitedFiles.forEach((file, index) => {
@@ -77,6 +78,7 @@ export function ModelRenderPage() {
       };
 
       accepted.push({
+        file,
         image,
         name: file.name,
         size: file.size
@@ -92,7 +94,27 @@ export function ModelRenderPage() {
     if (accepted.length === 0) return;
 
     accepted.forEach((item) => storageService.addRecentImage(item.image));
-    setPendingImages((prev) => [...prev, ...accepted]);
+
+    const readFileAsDataUrl = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('read-failed'));
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(file);
+      });
+
+    Promise.all(
+      accepted.map(async (item) => {
+        try {
+          const dataUrl = await readFileAsDataUrl(item.file);
+          return { image: item.image, name: item.name, size: item.size, dataUrl } satisfies PendingImage;
+        } catch {
+          return { image: item.image, name: item.name, size: item.size } satisfies PendingImage;
+        }
+      })
+    ).then((nextItems) => {
+      setPendingImages((prev) => [...prev, ...nextItems]);
+    });
   };
 
   const handleRemove = (id: string) => {
@@ -115,11 +137,16 @@ export function ModelRenderPage() {
       toast.info('请先上传至少 1 张图片');
       return;
     }
+    if (pendingImages.some((p) => !p.dataUrl)) {
+      toast.info('图片处理中，请稍后再试');
+      return;
+    }
 
     skipRevokeOnUnmountRef.current = true;
     navigate('/generating', {
       state: {
         batchImages: pendingImages.map((p) => p.image),
+        batchImageDataUrls: Object.fromEntries(pendingImages.map((p) => [p.image.id, p.dataUrl])),
         returnTo: '/model-render'
       }
     });

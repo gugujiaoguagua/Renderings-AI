@@ -54,6 +54,8 @@ export function GeneratingPage() {
   const image = location.state?.image as ImageData | undefined;
   const analysis = location.state?.analysis as AnalysisResult | undefined;
   const batchImages = location.state?.batchImages as ImageData[] | undefined;
+  const batchImageDataUrls = location.state?.batchImageDataUrls as Record<string, string> | undefined;
+  const imageDataUrlFromState = location.state?.imageDataUrl as string | undefined;
   const returnTo = (location.state?.returnTo as string | undefined) ?? '/';
   const isBatch = Array.isArray(batchImages) && batchImages.length > 0;
   const accountId = authService.getAccountId();
@@ -101,7 +103,7 @@ export function GeneratingPage() {
       if (isModelRender) {
         setCurrentStep('提交渲染任务...');
         setProgress(8);
-        const imageDataUrl = await fetchAsDataUrl(image.url);
+        const imageDataUrl = imageDataUrlFromState ?? (await fetchAsDataUrl(image.url));
         const runResp = await runninghubRunWorkflow({
           addMetadata: true,
           nodeInfoList: [],
@@ -246,7 +248,7 @@ export function GeneratingPage() {
         if (isModelRenderBatch || item.source === 'model') {
           setCurrentStep(`正在提交第 ${i + 1}/${total} 张…`);
           setProgress(((i + 0.05) / total) * 100);
-          const imageDataUrl = await fetchAsDataUrl(item.url);
+          const imageDataUrl = batchImageDataUrls?.[item.id] ?? (await fetchAsDataUrl(item.url));
           const runResp = await runninghubRunWorkflow({
             addMetadata: true,
             nodeInfoList: [],
