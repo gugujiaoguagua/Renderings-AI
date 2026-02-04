@@ -26,6 +26,7 @@ export function ModelRenderPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const pendingImagesRef = useRef<PendingImage[]>([]);
+  const skipRevokeOnUnmountRef = useRef(false);
 
   const canAddMore = pendingImages.length < 10;
   const remainingSlots = useMemo(() => Math.max(0, 10 - pendingImages.length), [pendingImages.length]);
@@ -115,6 +116,7 @@ export function ModelRenderPage() {
       return;
     }
 
+    skipRevokeOnUnmountRef.current = true;
     navigate('/generating', {
       state: {
         batchImages: pendingImages.map((p) => p.image),
@@ -125,6 +127,7 @@ export function ModelRenderPage() {
 
   useEffect(() => {
     return () => {
+      if (skipRevokeOnUnmountRef.current) return;
       pendingImagesRef.current.forEach((p) => URL.revokeObjectURL(p.image.url));
     };
   }, []);

@@ -19,6 +19,7 @@ async function fetchAsDataUrl(url: string): Promise<string> {
 }
 
 async function tryAnalyzeViaApi(imageUrl: string): Promise<AnalysisResult | null> {
+  if (import.meta.env.DEV) return null;
   try {
     const imageDataUrl = await fetchAsDataUrl(imageUrl);
     const resp = await fetch('/api/analyze', {
@@ -36,6 +37,7 @@ async function tryAnalyzeViaApi(imageUrl: string): Promise<AnalysisResult | null
 }
 
 async function tryGenerateViaApi(imageUrl: string, analysis: AnalysisResult): Promise<string | null> {
+  if (import.meta.env.DEV) return null;
   try {
     const imageDataUrl = await fetchAsDataUrl(imageUrl);
     const resp = await fetch('/api/generate', {
