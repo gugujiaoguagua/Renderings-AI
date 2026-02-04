@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from '@/app/components/ui/alert-dialog';
 import { analyzeImage, generateImage, parseError } from '@/app/services/ai';
+import { runninghubRunWorkflow, runninghubWaitForResult } from '@/app/services/runninghub';
 import { storageService } from '@/app/services/storage';
 import { pointsService } from '@/app/services/points';
 import { authService } from '@/app/services/auth';
@@ -23,6 +24,20 @@ import { toast } from 'sonner';
 function calcCostPointsByMs(elapsedMs: number) {
   const minutes = Math.max(1, Math.ceil(elapsedMs / 60000));
   return minutes;
+}
+
+async function fetchAsDataUrl(url: string): Promise<string> {
+  if (url.startsWith('data:')) return url;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('fetch-failed');
+  const blob = await resp.blob();
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read-failed'));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(blob);
+  });
+  return base64;
 }
 
 export function GeneratingPage() {
@@ -71,34 +86,74 @@ export function GeneratingPage() {
     }
 
     const startedAt = Date.now();
+    const isModelRender = image.source === 'model' || returnTo === '/model-render';
     let resolvedAnalysis: AnalysisResult | undefined = analysis;
     try {
-      if (!resolvedAnalysis) {
-        setCurrentStep('理解中...');
-        setProgress(5);
-        resolvedAnalysis = await analyzeImage(image.url);
+      let generatedUrl: string;
+      if (isModelRender) {
+        setCurrentStep('提交渲染任务...');
+        setProgress(8);
+        const imageDataUrl = await fetchAsDataUrl(image.url);
+        const runResp = await runninghubRunWorkflow({
+          addMetadata: true,
+          nodeInfoList: [],
+          instanceType: 'default',
+          usePersonalQueue: 'false',
+          imageDataUrl
+        });
         if (cancelledRef.current) return;
-      }
 
-      // Step 1: Understanding complete
-      setCurrentStep('理解完成');
-      setProgress(10);
+        const taskId = runResp.taskId;
+        resolvedAnalysis = {
+          summary: '模型渲染',
+          details: `taskId: ${taskId}`,
+          tags: ['模型渲染'],
+          confidence: 1
+        };
 
-      await new Promise(resolve => setTimeout(resolve, 500));
-      if (cancelledRef.current) return;
+        setCurrentStep('渲染中...');
+        setProgress(18);
+        const queryResp = await runninghubWaitForResult(taskId, {
+          pollIntervalMs: 2000,
+          timeoutMs: 10 * 60_000,
+          isCancelled: () => cancelledRef.current,
+          onTick: (status) => {
+            if (cancelledRef.current) return;
+            setCurrentStep(`渲染中（${status}）...`);
+            setProgress((p) => Math.min(94, Math.max(p, 18) + 2));
+          }
+        });
 
-      // Step 2: Generating
-      setCurrentStep('生成中...');
-      setProgress(20);
-
-      const generatedUrl = await generateImage(
-        image.url,
-        resolvedAnalysis,
-        (genProgress) => {
+        if (cancelledRef.current) return;
+        const url = queryResp.results?.[0]?.url;
+        if (!url) throw new Error('generation-failed');
+        generatedUrl = url;
+      } else {
+        if (!resolvedAnalysis) {
+          setCurrentStep('理解中...');
+          setProgress(5);
+          resolvedAnalysis = await analyzeImage(image.url);
           if (cancelledRef.current) return;
-          setProgress(20 + genProgress * 70); // 20% to 90%
         }
-      );
+
+        setCurrentStep('理解完成');
+        setProgress(10);
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+        if (cancelledRef.current) return;
+
+        setCurrentStep('生成中...');
+        setProgress(20);
+
+        generatedUrl = await generateImage(
+          image.url,
+          resolvedAnalysis,
+          (genProgress) => {
+            if (cancelledRef.current) return;
+            setProgress(20 + genProgress * 70);
+          }
+        );
+      }
 
       if (cancelledRef.current) return;
 
@@ -160,6 +215,7 @@ export function GeneratingPage() {
     let lastAnalysis: AnalysisResult | undefined;
     try {
       const total = batchImages.length;
+      const isModelRenderBatch = returnTo === '/model-render';
 
       for (let i = 0; i < total; i += 1) {
         if (cancelledRef.current) return;
@@ -177,25 +233,67 @@ export function GeneratingPage() {
         setBatchIndex(i);
         setCurrentImage(item);
 
-        setCurrentStep(`正在理解第 ${i + 1}/${total} 张…`);
-        setProgress((i / total) * 100);
+        let resolvedAnalysis: AnalysisResult;
+        let generatedUrl: string;
+        if (isModelRenderBatch || item.source === 'model') {
+          setCurrentStep(`正在提交第 ${i + 1}/${total} 张…`);
+          setProgress(((i + 0.05) / total) * 100);
+          const imageDataUrl = await fetchAsDataUrl(item.url);
+          const runResp = await runninghubRunWorkflow({
+            addMetadata: true,
+            nodeInfoList: [],
+            instanceType: 'default',
+            usePersonalQueue: 'false',
+            imageDataUrl
+          });
+          if (cancelledRef.current) return;
 
-        const resolvedAnalysis = await analyzeImage(item.url);
-        lastAnalysis = resolvedAnalysis;
-        if (cancelledRef.current) return;
+          const taskId = runResp.taskId;
+          resolvedAnalysis = {
+            summary: '模型渲染',
+            details: `taskId: ${taskId}`,
+            tags: ['模型渲染'],
+            confidence: 1
+          };
+          lastAnalysis = resolvedAnalysis;
 
-        setCurrentStep(`正在生成第 ${i + 1}/${total} 张…`);
-        setProgress(((i + 0.15) / total) * 100);
+          setCurrentStep(`正在渲染第 ${i + 1}/${total} 张…`);
+          setProgress(((i + 0.15) / total) * 100);
 
-        const generatedUrl = await generateImage(
-          item.url,
-          resolvedAnalysis,
-          (genProgress) => {
-            if (cancelledRef.current) return;
-            const stageProgress = 0.15 + genProgress * 0.8;
-            setProgress(((i + stageProgress) / total) * 100);
-          }
-        );
+          const queryResp = await runninghubWaitForResult(taskId, {
+            pollIntervalMs: 2000,
+            timeoutMs: 10 * 60_000,
+            isCancelled: () => cancelledRef.current,
+            onTick: () => {
+              if (cancelledRef.current) return;
+              setProgress((p) => Math.min(((i + 0.93) / total) * 100, Math.max(p, ((i + 0.15) / total) * 100) + 1));
+            }
+          });
+          if (cancelledRef.current) return;
+          const url = queryResp.results?.[0]?.url;
+          if (!url) throw new Error('generation-failed');
+          generatedUrl = url;
+        } else {
+          setCurrentStep(`正在理解第 ${i + 1}/${total} 张…`);
+          setProgress((i / total) * 100);
+
+          resolvedAnalysis = await analyzeImage(item.url);
+          lastAnalysis = resolvedAnalysis;
+          if (cancelledRef.current) return;
+
+          setCurrentStep(`正在生成第 ${i + 1}/${total} 张…`);
+          setProgress(((i + 0.15) / total) * 100);
+
+          generatedUrl = await generateImage(
+            item.url,
+            resolvedAnalysis,
+            (genProgress) => {
+              if (cancelledRef.current) return;
+              const stageProgress = 0.15 + genProgress * 0.8;
+              setProgress(((i + stageProgress) / total) * 100);
+            }
+          );
+        }
 
         if (cancelledRef.current) return;
 

@@ -24,6 +24,8 @@
   
   - `POST /api/analyze`
   - `POST /api/generate`
+  - `POST /api/runninghub/run`
+  - `POST /api/runninghub/query`
   
   当前默认实现是 mock（不会用到任何密钥），部署后应用即可直接访问。
   
@@ -33,6 +35,10 @@
   
   - `OPENAI_API_KEY`（或你自己的模型服务密钥）
   - `AI_API_URL`（如果你要转发到自建后端）
+  - `RUNNINGHUB_API_KEY`
+  - `RUNNINGHUB_WORKFLOW_ID`（你的模型渲染工作流 ID）
+  - `RUNNINGHUB_WORKFLOW_RUN_URL`（可选，默认按 ID 拼接）
+  - `RUNNINGHUB_QUERY_URL`（可选，默认 https://www.runninghub.cn/openapi/v2/query）
   
   前端会优先调用同域 `/api/*`；若接口不可用会自动回退到本地 mock。
   
