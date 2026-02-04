@@ -28,16 +28,24 @@ function calcCostPointsByMs(elapsedMs: number) {
 
 async function fetchAsDataUrl(url: string): Promise<string> {
   if (url.startsWith('data:')) return url;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('fetch-failed');
-  const blob = await resp.blob();
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('read-failed'));
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(blob);
-  });
-  return base64;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      if (url.startsWith('blob:')) throw new Error('blob-expired');
+      throw new Error('fetch-failed');
+    }
+    const blob = await resp.blob();
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('read-failed'));
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(blob);
+    });
+    return base64;
+  } catch {
+    if (url.startsWith('blob:')) throw new Error('blob-expired');
+    throw new Error('fetch-failed');
+  }
 }
 
 export function GeneratingPage() {

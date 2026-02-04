@@ -130,6 +130,30 @@ export async function generateImage(
 export function parseError(error: unknown): GenerationError {
   const errorMessage = error instanceof Error ? error.message : 'unknown';
 
+  if (errorMessage.includes('TOKEN_INVALID')) {
+    return {
+      type: 'permission',
+      message: '密钥无效或已过期',
+      action: '请在 Cloudflare 环境变量中更新 RUNNINGHUB_API_KEY'
+    };
+  }
+
+  if (errorMessage.includes('missing-env') || errorMessage.includes('RUNNINGHUB_API_KEY')) {
+    return {
+      type: 'permission',
+      message: '缺少服务端密钥配置',
+      action: '请在 Cloudflare Pages 环境变量中配置 RUNNINGHUB_API_KEY'
+    };
+  }
+
+  if (errorMessage.includes('blob-expired')) {
+    return {
+      type: 'format',
+      message: '图片链接已失效',
+      action: '请返回上一页重新选择图片（生成过程中不要刷新页面）'
+    };
+  }
+
   if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
     return {
       type: 'network',
