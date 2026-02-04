@@ -1,7 +1,7 @@
 export interface ImageData {
   id: string;
   url: string;
-  source: 'album' | 'example' | 'camera' | 'model';
+  source: 'album' | 'example' | 'camera' | 'model' | 'repair';
   timestamp: number;
 }
 

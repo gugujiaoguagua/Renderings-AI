@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ImagePlus, Camera, History, User, AlertCircle, Box, Sparkles } from 'lucide-react';
+import { ImagePlus, Camera, History, User, AlertCircle, Box, Sparkles, Wand2 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Card } from '@/app/components/ui/card';
 import { Alert, AlertDescription } from '@/app/components/ui/alert';
@@ -59,6 +59,10 @@ export function HomePage() {
 
   const handleModelRenderClick = () => {
     navigate('/model-render');
+  };
+
+  const handleImageRepairClick = () => {
+    navigate('/image-repair');
   };
 
   const handleCameraClick = () => {
@@ -160,16 +164,16 @@ export function HomePage() {
           </Card>
 
           <Card
-            className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-2 border-green-200 bg-gradient-to-br from-green-50 to-white"
-            onClick={() => {}}
+            className="p-8 hover:shadow-lg transition-shadow cursor-pointer border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white"
+            onClick={handleImageRepairClick}
           >
             <div className="flex flex-col items-center text-center space-y-4">
-              <div className="size-16 rounded-full bg-green-500 flex items-center justify-center">
-                <Sparkles className="size-8 text-white" />
+              <div className="size-16 rounded-full bg-amber-500 flex items-center justify-center">
+                <Wand2 className="size-8 text-white" />
               </div>
               <div>
-                <h2 className="font-semibold mb-1">智能创造</h2>
-                <p className="text-sm text-gray-600">AI驱动创意生成</p>
+                <h2 className="font-semibold mb-1">图片修复</h2>
+                <p className="text-sm text-gray-600">修改图片氛围适配风格</p>
               </div>
             </div>
           </Card>

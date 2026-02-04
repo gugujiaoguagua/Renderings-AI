@@ -8,6 +8,16 @@ export interface RunningHubRunResponse {
   promptTips?: string;
 }
 
+export interface RunningHubPingResponse {
+  ok: boolean;
+  workflowType: string | null;
+  workflowIdKeyUsed: string | null;
+  runUrlKeyUsed: string | null;
+  queryUrlKeyUsed: string | null;
+  runUrlHost: string | null;
+  runUrlPath: string | null;
+}
+
 export interface RunningHubQueryResultItem {
   url: string;
   outputType?: string;
@@ -39,6 +49,19 @@ export async function runninghubRunWorkflow(payload: unknown) {
     throw new Error(text || 'runninghub-run-failed');
   }
   return (await resp.json()) as RunningHubRunResponse;
+}
+
+export async function runninghubPing(workflowType?: string) {
+  const resp = await fetch('/api/runninghub/ping', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ workflowType })
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(text || 'runninghub-ping-failed');
+  }
+  return (await resp.json()) as RunningHubPingResponse;
 }
 
 export async function runninghubQueryTask(taskId: string) {

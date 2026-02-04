@@ -96,15 +96,18 @@ export function GeneratingPage() {
     }
 
     const startedAt = Date.now();
-    const isModelRender = image.source === 'model' || returnTo === '/model-render';
+    const isModelRender =
+      image.source === 'model' || returnTo === '/model-render' || image.source === 'repair' || returnTo === '/image-repair';
     let resolvedAnalysis: AnalysisResult | undefined = analysis;
     try {
       let generatedUrl: string;
       if (isModelRender) {
+        const workflowType = returnTo === '/image-repair' || image.source === 'repair' ? 'IMAGE_REPAIR' : undefined;
         setCurrentStep('提交渲染任务...');
         setProgress(8);
         const imageDataUrl = imageDataUrlFromState ?? (await fetchAsDataUrl(image.url));
         const runResp = await runninghubRunWorkflow({
+          workflowType,
           addMetadata: true,
           nodeInfoList: [],
           instanceType: 'default',
@@ -225,7 +228,7 @@ export function GeneratingPage() {
     let lastAnalysis: AnalysisResult | undefined;
     try {
       const total = batchImages.length;
-      const isModelRenderBatch = returnTo === '/model-render';
+      const isModelRenderBatch = returnTo === '/model-render' || returnTo === '/image-repair';
 
       for (let i = 0; i < total; i += 1) {
         if (cancelledRef.current) return;
@@ -245,11 +248,13 @@ export function GeneratingPage() {
 
         let resolvedAnalysis: AnalysisResult;
         let generatedUrl: string;
-        if (isModelRenderBatch || item.source === 'model') {
+        if (isModelRenderBatch || item.source === 'model' || item.source === 'repair') {
+          const workflowType = returnTo === '/image-repair' || item.source === 'repair' ? 'IMAGE_REPAIR' : undefined;
           setCurrentStep(`正在提交第 ${i + 1}/${total} 张…`);
           setProgress(((i + 0.05) / total) * 100);
           const imageDataUrl = batchImageDataUrls?.[item.id] ?? (await fetchAsDataUrl(item.url));
           const runResp = await runninghubRunWorkflow({
+            workflowType,
             addMetadata: true,
             nodeInfoList: [],
             instanceType: 'default',

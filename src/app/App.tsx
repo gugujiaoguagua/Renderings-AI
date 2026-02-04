@@ -8,6 +8,7 @@ import { ErrorPage } from '@/app/pages/ErrorPage';
 import { HistoryPage } from '@/app/pages/HistoryPage';
 import { SettingsPage } from '@/app/pages/SettingsPage';
 import { ModelRenderPage } from '@/app/pages/ModelRenderPage';
+import { ImageRepairPage } from '@/app/pages/ImageRepairPage';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/model-render" element={<ModelRenderPage />} />
+        <Route path="/image-repair" element={<ImageRepairPage />} />
         <Route path="/confirm" element={<ConfirmPage />} />
         <Route path="/generating" element={<GeneratingPage />} />
         <Route path="/result" element={<ResultPage />} />

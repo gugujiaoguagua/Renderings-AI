@@ -8,6 +8,15 @@ interface RunWorkflowResponse {
   promptTips?: string;
 }
 
+interface ClientRunRequestBody {
+  workflowType?: string;
+  addMetadata?: unknown;
+  nodeInfoList?: unknown;
+  instanceType?: unknown;
+  usePersonalQueue?: unknown;
+  [key: string]: unknown;
+}
+
 function json(data: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
     headers: {
@@ -23,10 +32,27 @@ function pickEnvValue(env: Record<string, unknown>, key: string) {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
 }
 
+function normalizeWorkflowType(value: unknown) {
+  const raw = typeof value === 'string' ? value : '';
+  const normalized = raw.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+  return normalized.length > 0 ? normalized : null;
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: Record<string, unknown> }) => {
   const apiKey = pickEnvValue(env, 'RUNNINGHUB_API_KEY');
-  const workflowId = pickEnvValue(env, 'RUNNINGHUB_WORKFLOW_ID');
-  const runUrlOverride = pickEnvValue(env, 'RUNNINGHUB_WORKFLOW_RUN_URL');
+  const rawBody = await request.text();
+  let bodyJson: ClientRunRequestBody | null = null;
+  try {
+    bodyJson = JSON.parse(rawBody) as ClientRunRequestBody;
+  } catch {
+    bodyJson = null;
+  }
+
+  const workflowType = normalizeWorkflowType(bodyJson?.workflowType);
+  const suffix = workflowType ? `_${workflowType}` : '';
+  const workflowId = pickEnvValue(env, `RUNNINGHUB_WORKFLOW_ID${suffix}`) ?? pickEnvValue(env, 'RUNNINGHUB_WORKFLOW_ID');
+  const runUrlOverride =
+    pickEnvValue(env, `RUNNINGHUB_WORKFLOW_RUN_URL${suffix}`) ?? pickEnvValue(env, 'RUNNINGHUB_WORKFLOW_RUN_URL');
 
   if (!apiKey) return json({ error: 'missing-env', key: 'RUNNINGHUB_API_KEY' }, { status: 500 });
   if (!runUrlOverride && !workflowId) {
@@ -34,7 +60,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   }
 
   const runUrl = runUrlOverride ?? `https://www.runninghub.cn/openapi/v2/run/workflow/${workflowId}`;
-  const body = await request.text();
 
   const resp = await fetch(runUrl, {
     method: 'POST',
@@ -42,7 +67,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
       'content-type': 'application/json',
       authorization: `Bearer ${apiKey}`
     },
-    body
+    body: rawBody
   });
 
   const text = await resp.text();
