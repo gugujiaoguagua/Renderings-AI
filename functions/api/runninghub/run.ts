@@ -256,31 +256,66 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   console.log('[runninghub/run] start', debug);
 
-  let resp: Response;
-  try {
-    resp = await fetch(runUrl, {
-      method: 'POST',
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'X-API-KEY': apiKey
-      },
-      body: upstreamBodyText
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.log('[runninghub/run] network error', { message });
+  const altRunUrl = (() => {
+    if (!runUrlHost || !runUrlPath) return null;
+    if (runUrlHost === 'www.runninghub.cn') return `https://api.runninghub.cn${runUrlPath}`;
+    if (runUrlHost === 'api.runninghub.cn') return `https://www.runninghub.cn${runUrlPath}`;
+    return null;
+  })();
+
+  const candidates = [runUrl, altRunUrl].filter((v): v is string => Boolean(v));
+  const attempts: Array<{ url: string; status?: number; error?: string }> = [];
+
+  let resp: Response | null = null;
+  for (const url of candidates) {
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'X-API-KEY': apiKey
+        },
+        body: upstreamBodyText
+      });
+
+      attempts.push({ url, status: r.status });
+
+      // 401 很可能是域名/网关不接受 OpenAPI Key（例如 www 站点域名）。遇到 401 则尝试备用域名。
+      if (r.status === 401 && candidates.length > 1) {
+        continue;
+      }
+
+      resp = r;
+      break;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      attempts.push({ url, error: message });
+      continue;
+    }
+  }
+
+  if (!resp) {
+    const lastErr = attempts.slice().reverse().find((a) => a.error)?.error ?? 'network-error';
+    console.log('[runninghub/run] network error', { lastErr, attempts });
     return json(
       {
         error: 'runninghub-network',
-        message,
-        hint: 'Cloudflare 到 RunningHub 的网络连接中断。可尝试在 Pages 环境变量中设置 RUNNINGHUB_API_BASE（例如 https://www.runninghub.cn 或 https://api.runninghub.cn）后重新部署。',
+        message: lastErr,
+        attempts,
+        hint: 'Cloudflare 到 RunningHub 的网络连接中断。可尝试在 Pages 环境变量中设置 RUNNINGHUB_API_BASE（例如 https://api.runninghub.cn 或 https://www.runninghub.cn）后重新部署。',
         debug
       },
       { status: 502 }
     );
   }
+
+  // 如果第一条命中的是 401，说明 Key 可能不是 OpenAPI Key，或该域名不支持该鉴权。
+  if (resp.status === 401) {
+    console.log('[runninghub/run] unauthorized', { attempts });
+  }
+
 
   const text = await resp.text();
   let data: RunWorkflowResponse | null = null;
