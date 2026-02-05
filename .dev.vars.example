@@ -9,8 +9,19 @@ RUNNINGHUB_WORKFLOW_ID=
 # 可选：按 workflowType 覆盖（GeneratingPage 里用到 IMAGE_REPAIR）
 RUNNINGHUB_WORKFLOW_ID_IMAGE_REPAIR=
 
-# 可选：不使用 workflowId 拼接 URL 时可直接指定 run URL
+# 可选：不使用默认拼接 URL 时可直接指定 run URL
+# 默认： https://api.runninghub.cn/run/workflow/${RUNNINGHUB_WORKFLOW_ID}
 RUNNINGHUB_WORKFLOW_RUN_URL=
+
+# 可选：当你前端没传 nodeInfoList（当前项目默认就是这样）时，用下面两项把 imageDataUrl 映射到工作流节点
+# 对照 RunningHub 文档里的 nodeInfoList 示例：通常 image 在 nodeId=1，参数名为 image
+RUNNINGHUB_IMAGE_NODE_ID=1
+RUNNINGHUB_IMAGE_PARAM_KEY=image
+
+# 可选：给工作流补一个默认 prompt（某些工作流会校验 prompt 节点）
+RUNNINGHUB_DEFAULT_PROMPT=
+RUNNINGHUB_PROMPT_NODE_ID=4
+RUNNINGHUB_PROMPT_PARAM_KEY=prompt
 
 # 可选：查询接口地址（默认 https://www.runninghub.cn/openapi/v2/query）
 RUNNINGHUB_QUERY_URL=

@@ -47,7 +47,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   const workflowId = workflowIdKeyUsed ? pickEnvValue(env, workflowIdKeyUsed) : null;
   const runUrlOverride = runUrlKeyUsed ? pickEnvValue(env, runUrlKeyUsed) : null;
-  const runUrl = runUrlOverride ?? (workflowId ? `https://www.runninghub.cn/openapi/v2/run/workflow/${workflowId}` : null);
+  const runUrl = runUrlOverride ?? (workflowId ? `https://api.runninghub.cn/run/workflow/${workflowId}` : null);
 
   let runUrlHost: string | null = null;
   let runUrlPath: string | null = null;

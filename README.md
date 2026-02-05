@@ -38,8 +38,12 @@
   - `AI_API_URL`（如果你要转发到自建后端）
   - `RUNNINGHUB_API_KEY`
   - `RUNNINGHUB_WORKFLOW_ID`（你的模型渲染工作流 ID）
-  - `RUNNINGHUB_WORKFLOW_RUN_URL`（可选，默认按 ID 拼接）
-  - `RUNNINGHUB_QUERY_URL`（可选，默认 https://www.runninghub.cn/openapi/v2/query）
+  - `RUNNINGHUB_WORKFLOW_RUN_URL`（可选，默认 https://api.runninghub.cn/run/workflow/${RUNNINGHUB_WORKFLOW_ID}）
+  - `RUNNINGHUB_IMAGE_NODE_ID` / `RUNNINGHUB_IMAGE_PARAM_KEY`（可选：当前端未提供 nodeInfoList 时，用于把 imageDataUrl 映射到工作流节点；默认 1/image）
+  - `RUNNINGHUB_DEFAULT_PROMPT` / `RUNNINGHUB_PROMPT_NODE_ID` / `RUNNINGHUB_PROMPT_PARAM_KEY`（可选：某些工作流需要 prompt 节点，可用环境变量补齐；默认 4/prompt）
+
+  - `RUNNINGHUB_QUERY_URL`（可选，查询接口地址）
+
   
   前端会优先调用同域 `/api/*`；其中 `analyze/generate` 在生产环境会优先走 Functions，开发环境默认走前端 mock；模型渲染相关功能会走 `runninghub/*`。
 
