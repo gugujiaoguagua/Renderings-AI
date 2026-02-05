@@ -38,6 +38,12 @@ function normalizeWorkflowType(value: unknown) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function previewForLog(text: string, maxLen = 300) {
+  if (!text) return '';
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen)}...(+${text.length - maxLen} chars)`;
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: Record<string, unknown> }) => {
   const apiKey = pickEnvValue(env, 'RUNNINGHUB_API_KEY');
   const rawBody = await request.text();
@@ -61,6 +67,24 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   const runUrl = runUrlOverride ?? `https://www.runninghub.cn/openapi/v2/run/workflow/${workflowId}`;
 
+  let runUrlHost: string | null = null;
+  let runUrlPath: string | null = null;
+  try {
+    const u = new URL(runUrl);
+    runUrlHost = u.host;
+    runUrlPath = u.pathname;
+  } catch {
+    runUrlHost = null;
+    runUrlPath = null;
+  }
+
+  console.log('[runninghub/run] start', {
+    workflowType,
+    runUrlHost,
+    runUrlPath,
+    bodyBytes: rawBody.length
+  });
+
   const resp = await fetch(runUrl, {
     method: 'POST',
     headers: {
@@ -79,27 +103,38 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   }
 
   if (!resp.ok) {
+    console.log('[runninghub/run] upstream not ok', {
+      upstreamStatus: resp.status,
+      bodyPreview: previewForLog(text)
+    });
     return json(
       {
         error: 'runninghub-error',
-        status: resp.status,
+        upstreamStatus: resp.status,
         body: data ?? text
       },
-      { status: 502 }
+      { status: resp.status }
     );
   }
 
   if (!data) {
+    console.log('[runninghub/run] invalid json', { bodyPreview: previewForLog(text) });
     return json({ error: 'runninghub-invalid-json', body: text }, { status: 502 });
   }
 
   if (data?.errorCode || data?.errorMessage) {
+    console.log('[runninghub/run] upstream response error', {
+      errorCode: data.errorCode,
+      errorMessage: data.errorMessage
+    });
     return json({ error: 'runninghub-response-error', body: data }, { status: 502 });
   }
 
   if (!data.taskId || !data.status) {
+    console.log('[runninghub/run] invalid response', { bodyPreview: previewForLog(text) });
     return json({ error: 'runninghub-invalid-response', body: data }, { status: 502 });
   }
 
+  console.log('[runninghub/run] ok', { taskId: data.taskId, status: data.status });
   return json(data);
 };

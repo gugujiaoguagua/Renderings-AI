@@ -33,6 +33,12 @@ function pickEnvValue(env: Record<string, unknown>, key: string) {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
 }
 
+function previewForLog(text: string, maxLen = 300) {
+  if (!text) return '';
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen)}...(+${text.length - maxLen} chars)`;
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: Record<string, unknown> }) => {
   const apiKey = pickEnvValue(env, 'RUNNINGHUB_API_KEY');
   const queryUrl = pickEnvValue(env, 'RUNNINGHUB_QUERY_URL') ?? 'https://www.runninghub.cn/openapi/v2/query';
@@ -48,6 +54,19 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   }
   const taskId = payload?.taskId;
   if (!taskId || typeof taskId !== 'string') return json({ error: 'missing-taskId' }, { status: 400 });
+
+  let queryUrlHost: string | null = null;
+  let queryUrlPath: string | null = null;
+  try {
+    const u = new URL(queryUrl);
+    queryUrlHost = u.host;
+    queryUrlPath = u.pathname;
+  } catch {
+    queryUrlHost = null;
+    queryUrlPath = null;
+  }
+
+  console.log('[runninghub/query] start', { queryUrlHost, queryUrlPath, taskId });
 
   const resp = await fetch(queryUrl, {
     method: 'POST',
@@ -67,27 +86,38 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   }
 
   if (!resp.ok) {
+    console.log('[runninghub/query] upstream not ok', {
+      upstreamStatus: resp.status,
+      bodyPreview: previewForLog(text)
+    });
     return json(
       {
         error: 'runninghub-error',
-        status: resp.status,
+        upstreamStatus: resp.status,
         body: data ?? text
       },
-      { status: 502 }
+      { status: resp.status }
     );
   }
 
   if (!data) {
+    console.log('[runninghub/query] invalid json', { bodyPreview: previewForLog(text) });
     return json({ error: 'runninghub-invalid-json', body: text }, { status: 502 });
   }
 
   if (data?.errorCode || data?.errorMessage) {
+    console.log('[runninghub/query] upstream response error', {
+      errorCode: data.errorCode,
+      errorMessage: data.errorMessage
+    });
     return json({ error: 'runninghub-response-error', body: data }, { status: 502 });
   }
 
   if (!data.taskId || !data.status) {
+    console.log('[runninghub/query] invalid response', { bodyPreview: previewForLog(text) });
     return json({ error: 'runninghub-invalid-response', body: data }, { status: 502 });
   }
 
+  console.log('[runninghub/query] ok', { taskId: data.taskId, status: data.status });
   return json(data);
 };
