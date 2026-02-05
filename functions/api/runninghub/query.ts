@@ -40,7 +40,8 @@ function previewForLog(text: string, maxLen = 300) {
 }
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: Record<string, unknown> }) => {
-  const apiKey = pickEnvValue(env, 'RUNNINGHUB_API_KEY');
+  try {
+    const apiKey = pickEnvValue(env, 'RUNNINGHUB_API_KEY');
   const queryUrl = pickEnvValue(env, 'RUNNINGHUB_QUERY_URL') ?? 'https://www.runninghub.cn/openapi/v2/query';
 
   if (!apiKey) return json({ error: 'missing-env', key: 'RUNNINGHUB_API_KEY' }, { status: 500 });
@@ -122,4 +123,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   console.log('[runninghub/query] ok', { taskId: data.taskId, status: data.status });
   return json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : '';
+    const stackPreview = stack ? stack.split('\n').slice(0, 6).join('\n') : '';
+    console.log('[runninghub/query] exception', { message, stackPreview });
+    return json({ error: 'worker-exception', message, stack: stackPreview }, { status: 500 });
+  }
 };

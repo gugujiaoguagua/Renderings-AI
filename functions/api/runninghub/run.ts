@@ -74,7 +74,8 @@ function validateWorkflowRunUrl(url: string) {
 }
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: Record<string, unknown> }) => {
-  const apiKey = pickEnvValue(env, 'RUNNINGHUB_API_KEY');
+  try {
+    const apiKey = pickEnvValue(env, 'RUNNINGHUB_API_KEY');
   const rawBody = await request.text();
   let bodyJson: ClientRunRequestBody | null = null;
   try {
@@ -315,4 +316,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   console.log('[runninghub/run] ok', { taskId: data.taskId, status: data.status });
   return json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : '';
+    const stackPreview = stack ? stack.split('\n').slice(0, 6).join('\n') : '';
+    console.log('[runninghub/run] exception', { message, stackPreview });
+    return json({ error: 'worker-exception', message, stack: stackPreview }, { status: 500 });
+  }
 };
