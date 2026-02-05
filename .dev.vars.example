@@ -3,6 +3,11 @@
 
 RUNNINGHUB_API_KEY=
 
+# RunningHub API 基础域名（可选）
+# 默认使用 https://api.runninghub.cn
+# 如果出现 "Network connection lost" 之类的出站网络问题，可尝试改成 https://www.runninghub.cn
+RUNNINGHUB_API_BASE=
+
 # 默认工作流（模型渲染）
 RUNNINGHUB_WORKFLOW_ID=
 

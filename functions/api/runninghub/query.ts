@@ -69,16 +69,24 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   console.log('[runninghub/query] start', { queryUrlHost, queryUrlPath, taskId });
 
-  const resp = await fetch(queryUrl, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'X-API-KEY': apiKey
-    },
-    body: JSON.stringify({ taskId })
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(queryUrl, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'X-API-KEY': apiKey
+      },
+      body: JSON.stringify({ taskId })
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.log('[runninghub/query] network error', { message });
+    return json({ error: 'runninghub-network', message }, { status: 502 });
+  }
+
 
   const text = await resp.text();
   let data: QueryWorkflowResponse | null = null;

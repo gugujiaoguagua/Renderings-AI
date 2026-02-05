@@ -38,7 +38,9 @@
   - `AI_API_URL`（如果你要转发到自建后端）
   - `RUNNINGHUB_API_KEY`
   - `RUNNINGHUB_WORKFLOW_ID`（你的模型渲染工作流 ID）
+  - `RUNNINGHUB_API_BASE`（可选，默认 `https://api.runninghub.cn`；若 Cloudflare 出现 `Network connection lost`，可尝试改成 `https://www.runninghub.cn`）
   - `RUNNINGHUB_WORKFLOW_RUN_URL`（可选，默认 https://api.runninghub.cn/run/workflow/${RUNNINGHUB_WORKFLOW_ID}；不要填成 `https://www.runninghub.cn/upload/image` 这类上传接口）
+
 
   - `RUNNINGHUB_IMAGE_NODE_ID` / `RUNNINGHUB_IMAGE_PARAM_KEY`（可选：当前端未提供 nodeInfoList 时，用于把 imageDataUrl 映射到工作流节点；默认 1/image）
   - `RUNNINGHUB_DEFAULT_PROMPT` / `RUNNINGHUB_PROMPT_NODE_ID` / `RUNNINGHUB_PROMPT_PARAM_KEY`（可选：某些工作流需要 prompt 节点，可用环境变量补齐；默认 4/prompt）

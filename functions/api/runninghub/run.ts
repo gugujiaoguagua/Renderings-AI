@@ -95,7 +95,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     return json({ error: 'missing-env', key: 'RUNNINGHUB_WORKFLOW_ID' }, { status: 500 });
   }
 
-  const defaultRunUrl = `https://api.runninghub.cn/run/workflow/${workflowId}`;
+  const apiBase = pickEnvValue(env, 'RUNNINGHUB_API_BASE') ?? 'https://api.runninghub.cn';
+  const defaultRunUrl = `${apiBase.replace(/\/$/, '')}/run/workflow/${workflowId}`;
   const runUrl = runUrlOverride ?? defaultRunUrl;
 
   // 防止把 RUNNINGHUB_WORKFLOW_RUN_URL 误配成 /upload/image 之类的非工作流接口
@@ -255,16 +256,31 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   console.log('[runninghub/run] start', debug);
 
-  const resp = await fetch(runUrl, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'X-API-KEY': apiKey
-    },
-    body: upstreamBodyText
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(runUrl, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'X-API-KEY': apiKey
+      },
+      body: upstreamBodyText
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.log('[runninghub/run] network error', { message });
+    return json(
+      {
+        error: 'runninghub-network',
+        message,
+        hint: 'Cloudflare 到 RunningHub 的网络连接中断。可尝试在 Pages 环境变量中设置 RUNNINGHUB_API_BASE（例如 https://www.runninghub.cn 或 https://api.runninghub.cn）后重新部署。',
+        debug
+      },
+      { status: 502 }
+    );
+  }
 
   const text = await resp.text();
   let data: RunWorkflowResponse | null = null;
