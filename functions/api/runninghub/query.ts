@@ -88,7 +88,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   }
 
 
-  const text = await resp.text();
+  let text = '';
+  try {
+    text = await resp.text();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.log('[runninghub/query] read-body error', { message, status: resp.status });
+    return json({ error: 'runninghub-network', message }, { status: 502 });
+  }
+
   let data: QueryWorkflowResponse | null = null;
   try {
     data = JSON.parse(text) as QueryWorkflowResponse;

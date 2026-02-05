@@ -317,8 +317,28 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   }
 
 
-  const text = await resp.text();
+
+
+  let text = '';
+  try {
+    text = await resp.text();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.log('[runninghub/run] read-body error', { message, attempts, status: resp.status });
+    return json(
+      {
+        error: 'runninghub-network',
+        message,
+        attempts,
+        hint: '上游连接在读取响应体时中断（常见于跨境链路/网关限流）。建议改用 OpenAPI Key + api.runninghub.cn，避免使用网页登录态/上传签名接口。',
+        debug
+      },
+      { status: 502 }
+    );
+  }
+
   let data: RunWorkflowResponse | null = null;
+
   try {
     data = JSON.parse(text) as RunWorkflowResponse;
   } catch {
