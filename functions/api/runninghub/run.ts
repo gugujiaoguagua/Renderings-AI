@@ -102,6 +102,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   let nodeInfoList: NodeInfoItem[] | null = null;
   let usedSchema: 'client-nodeInfoList' | 'env-mapped-image' = 'client-nodeInfoList';
 
+  // debug meta (do NOT include large payloads or secrets)
+  let mappedImageNodeId: string | null = null;
+  let mappedImageParamKey: string | null = null;
+  let mappedPromptNodeId: string | null = null;
+  let mappedPromptParamKey: string | null = null;
+  let imageBase64Length: number | null = null;
+  let imageBase64Prefix: string | null = null;
+
   if (Array.isArray(rawNodeInfoList) && rawNodeInfoList.length > 0) {
     const normalized: NodeInfoItem[] = [];
     for (const it of rawNodeInfoList) {
@@ -140,6 +148,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     const imageParamKey = pickEnvValue(env, imageParamKeyKey) ?? 'image';
 
     const base64 = stripDataUrlBase64Prefix(imageDataUrl.trim());
+    mappedImageNodeId = imageNodeId;
+    mappedImageParamKey = imageParamKey;
+    imageBase64Length = base64.length;
+    imageBase64Prefix = base64.slice(0, 24);
 
     nodeInfoList = [
       {
@@ -164,6 +176,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
       const promptNodeId = pickEnvValue(env, promptNodeIdKey) ?? '4';
       const promptParamKey = pickEnvValue(env, promptParamKeyKey) ?? 'prompt';
+      mappedPromptNodeId = promptNodeId;
+      mappedPromptParamKey = promptParamKey;
 
       nodeInfoList.push({
         nodeId: promptNodeId,
@@ -189,20 +203,32 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   const upstreamBodyText = JSON.stringify(payload);
 
-  console.log('[runninghub/run] start', {
+  const nodeInfoListSummary = (nodeInfoList ?? []).map((it) => ({ nodeId: it.nodeId, keys: Object.keys(it.params ?? {}) }));
+  const debug = {
     workflowType,
+    usedSchema,
     runUrlHost,
     runUrlPath,
     clientBodyBytes: rawBody.length,
     upstreamBodyBytes: upstreamBodyText.length,
-    usedSchema
-  });
+    nodeInfoListSummary,
+    mappedImageNodeId,
+    mappedImageParamKey,
+    mappedPromptNodeId,
+    mappedPromptParamKey,
+    imageBase64Length,
+    imageBase64Prefix
+  };
+
+  console.log('[runninghub/run] start', debug);
 
   const resp = await fetch(runUrl, {
     method: 'POST',
     headers: {
+      accept: 'application/json',
       'content-type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
+      Authorization: `Bearer ${apiKey}`,
+      'X-API-KEY': apiKey
     },
     body: upstreamBodyText
   });
@@ -219,6 +245,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     console.log('[runninghub/run] upstream not ok', {
       upstreamStatus: resp.status,
       usedSchema,
+      upstreamBodyBytes: text.length,
       bodyPreview: previewForLog(text)
     });
     const upstreamContentType = resp.headers.get('content-type');
@@ -229,6 +256,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
         upstreamStatusText: resp.statusText,
         upstreamContentType,
         usedSchema,
+        debug,
         body: data ?? text
       },
       { status: resp.status }

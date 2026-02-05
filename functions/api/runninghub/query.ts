@@ -71,8 +71,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   const resp = await fetch(queryUrl, {
     method: 'POST',
     headers: {
+      accept: 'application/json',
       'content-type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
+      Authorization: `Bearer ${apiKey}`,
+      'X-API-KEY': apiKey
     },
     body: JSON.stringify({ taskId })
   });
