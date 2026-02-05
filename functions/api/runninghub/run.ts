@@ -78,23 +78,53 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     runUrlPath = null;
   }
 
+  const inputPayload = (() => {
+    const src = (bodyJson ?? {}) as Record<string, unknown>;
+    const { workflowType: _workflowType, ...rest } = src;
+    return rest;
+  })();
+
+  let usedSchema: 'passthrough' | 'wrap-input' | 'v1' = 'passthrough';
+  let upstreamBodyText = rawBody;
+
+  // 如果你把 RUNNINGHUB_WORKFLOW_RUN_URL 配成 v1 端点，则自动按 v1 schema 发送
+  if (runUrl.includes('/task/openapi/v1/run')) {
+    if (!workflowId) return json({ error: 'missing-env', key: 'RUNNINGHUB_WORKFLOW_ID' }, { status: 500 });
+    usedSchema = 'v1';
+    upstreamBodyText = JSON.stringify({ workflowId, input: inputPayload });
+  }
+
   console.log('[runninghub/run] start', {
     workflowType,
     runUrlHost,
     runUrlPath,
-    bodyBytes: rawBody.length
+    bodyBytes: rawBody.length,
+    usedSchema
   });
 
-  const resp = await fetch(runUrl, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: rawBody
-  });
+  const doFetch = async (bodyTextToSend: string) => {
+    return await fetch(runUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: bodyTextToSend
+    });
+  };
 
-  const text = await resp.text();
+  let resp = await doFetch(upstreamBodyText);
+  let text = await resp.text();
+
+  // 对 v2 端点做一次温和的 fallback：400 时尝试包一层 input
+  if (usedSchema === 'passthrough' && resp.status === 400) {
+    usedSchema = 'wrap-input';
+    const retryBodyText = JSON.stringify({ input: inputPayload });
+    console.log('[runninghub/run] retry with wrap-input', { retryBodyBytes: retryBodyText.length });
+    resp = await doFetch(retryBodyText);
+    text = await resp.text();
+  }
+
   let data: RunWorkflowResponse | null = null;
   try {
     data = JSON.parse(text) as RunWorkflowResponse;
@@ -105,12 +135,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   if (!resp.ok) {
     console.log('[runninghub/run] upstream not ok', {
       upstreamStatus: resp.status,
+      usedSchema,
       bodyPreview: previewForLog(text)
     });
     return json(
       {
         error: 'runninghub-error',
         upstreamStatus: resp.status,
+        usedSchema,
         body: data ?? text
       },
       { status: resp.status }
