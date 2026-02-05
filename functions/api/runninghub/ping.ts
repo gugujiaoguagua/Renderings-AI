@@ -62,7 +62,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     }
   }
 
-  const ok = Boolean(pickEnvValue(env, 'RUNNINGHUB_API_KEY')) && Boolean(runUrl);
+  const ok = Boolean(pickEnvValue(env, 'RUNNINGHUB_API_KEY')) && Boolean(runUrlHost);
   return json({
     ok,
     workflowType,

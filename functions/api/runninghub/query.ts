@@ -53,7 +53,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`
+      Authorization: `Bearer ${apiKey}`
     },
     body: JSON.stringify({ taskId })
   });
@@ -77,8 +77,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     );
   }
 
+  if (!data) {
+    return json({ error: 'runninghub-invalid-json', body: text }, { status: 502 });
+  }
+
   if (data?.errorCode || data?.errorMessage) {
     return json({ error: 'runninghub-response-error', body: data }, { status: 502 });
+  }
+
+  if (!data.taskId || !data.status) {
+    return json({ error: 'runninghub-invalid-response', body: data }, { status: 502 });
   }
 
   return json(data);

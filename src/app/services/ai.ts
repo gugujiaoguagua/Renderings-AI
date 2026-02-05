@@ -1,4 +1,5 @@
 import type { AnalysisResult, GenerationError } from '@/app/types';
+import { fetchJson } from '@/app/services/http';
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -6,32 +7,42 @@ function sleep(ms: number) {
 
 async function fetchAsDataUrl(url: string): Promise<string> {
   if (url.startsWith('data:')) return url;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('fetch-failed');
-  const blob = await resp.blob();
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('read-failed'));
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(blob);
-  });
-  return base64;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      if (url.startsWith('blob:')) throw new Error('blob-expired');
+      throw new Error('fetch-failed');
+    }
+    const blob = await resp.blob();
+    if (blob.type && !blob.type.startsWith('image/')) throw new Error('unsupported');
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('read-failed'));
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(blob);
+    });
+    return base64;
+  } catch {
+    if (url.startsWith('blob:')) throw new Error('blob-expired');
+    throw new Error('fetch-failed');
+  }
 }
 
 async function tryAnalyzeViaApi(imageUrl: string): Promise<AnalysisResult | null> {
   if (import.meta.env.DEV) return null;
   try {
     const imageDataUrl = await fetchAsDataUrl(imageUrl);
-    const resp = await fetch('/api/analyze', {
+    const data = await fetchJson<{ analysis?: AnalysisResult }>('/api/analyze', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ imageDataUrl })
     });
-    if (!resp.ok) return null;
-    const data = (await resp.json()) as { analysis?: AnalysisResult };
-    if (!data.analysis) return null;
-    return data.analysis;
-  } catch {
+    return data.analysis ?? null;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : '';
+    if (msg.includes('HTTP_404') || msg.includes('Unexpected token') || msg.includes('<!DOCTYPE') || msg.includes('<html')) {
+      throw error;
+    }
     return null;
   }
 }
@@ -40,16 +51,17 @@ async function tryGenerateViaApi(imageUrl: string, analysis: AnalysisResult): Pr
   if (import.meta.env.DEV) return null;
   try {
     const imageDataUrl = await fetchAsDataUrl(imageUrl);
-    const resp = await fetch('/api/generate', {
+    const data = await fetchJson<{ generatedUrl?: string }>('/api/generate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ imageDataUrl, analysis })
     });
-    if (!resp.ok) return null;
-    const data = (await resp.json()) as { generatedUrl?: string };
-    if (!data.generatedUrl) return null;
-    return data.generatedUrl;
-  } catch {
+    return data.generatedUrl ?? null;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : '';
+    if (msg.includes('HTTP_404') || msg.includes('Unexpected token') || msg.includes('<!DOCTYPE') || msg.includes('<html')) {
+      throw error;
+    }
     return null;
   }
 }
@@ -138,6 +150,14 @@ export function parseError(error: unknown): GenerationError {
     };
   }
 
+  if (errorMessage.includes('RUNNINGHUB_WORKFLOW_ID')) {
+    return {
+      type: 'permission',
+      message: '缺少工作流配置',
+      action: '请在 Cloudflare Pages 环境变量中配置 RUNNINGHUB_WORKFLOW_ID（或 RUNNINGHUB_WORKFLOW_RUN_URL）'
+    };
+  }
+
   if (errorMessage.includes('missing-env') || errorMessage.includes('RUNNINGHUB_API_KEY')) {
     return {
       type: 'permission',
@@ -146,11 +166,32 @@ export function parseError(error: unknown): GenerationError {
     };
   }
 
+  if (errorMessage.includes('runninghub-error') || errorMessage.includes('runninghub-response-error')) {
+    return {
+      type: 'service-busy',
+      message: 'RunningHub 服务返回错误',
+      action: '请在 Network 里查看 /api/runninghub/* 的 Response 内容'
+    };
+  }
+
   if (errorMessage.includes('blob-expired')) {
     return {
       type: 'format',
       message: '图片链接已失效',
       action: '请返回上一页重新选择图片（生成过程中不要刷新页面）'
+    };
+  }
+
+  if (
+    errorMessage.includes('HTTP_404') ||
+    errorMessage.includes('Unexpected token') ||
+    errorMessage.includes('<!DOCTYPE') ||
+    errorMessage.includes('<html')
+  ) {
+    return {
+      type: 'network',
+      message: '接口不可用或返回了网页内容',
+      action: '请检查 /api 路由是否 404，以及 Cloudflare Pages Functions 是否已生效'
     };
   }
 

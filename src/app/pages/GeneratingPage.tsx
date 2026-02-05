@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
 } from '@/app/components/ui/alert-dialog';
 import { analyzeImage, generateImage, parseError } from '@/app/services/ai';
-import { runninghubRunWorkflow, runninghubWaitForResult } from '@/app/services/runninghub';
+import { runninghubPing, runninghubRunWorkflow, runninghubWaitForResult } from '@/app/services/runninghub';
 import { storageService } from '@/app/services/storage';
 import { pointsService } from '@/app/services/points';
 import { authService } from '@/app/services/auth';
@@ -103,6 +103,14 @@ export function GeneratingPage() {
       let generatedUrl: string;
       if (isModelRender) {
         const workflowType = returnTo === '/image-repair' || image.source === 'repair' ? 'IMAGE_REPAIR' : undefined;
+        setCurrentStep('检查服务配置...');
+        setProgress(4);
+        const ping = await runninghubPing(workflowType);
+        if (!ping.ok) {
+          if (!ping.workflowIdKeyUsed && !ping.runUrlKeyUsed) throw new Error('missing-env RUNNINGHUB_WORKFLOW_ID');
+          throw new Error('missing-env RUNNINGHUB_API_KEY');
+        }
+
         setCurrentStep('提交渲染任务...');
         setProgress(8);
         const imageDataUrl = imageDataUrlFromState ?? (await fetchAsDataUrl(image.url));

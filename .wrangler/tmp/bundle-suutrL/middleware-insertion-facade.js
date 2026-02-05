@@ -1,0 +1,11 @@
+				import worker, * as OTHER_EXPORTS from "D:\\我的应用\\模型渲染AI\\.wrangler\\tmp\\pages-9X9QdQ\\functionsWorker-0.6265611909293463.mjs";
+				import * as __MIDDLEWARE_0__ from "D:\\我的应用\\模型渲染AI\\node_modules\\wrangler\\templates\\middleware\\middleware-ensure-req-body-drained.ts";
+import * as __MIDDLEWARE_1__ from "D:\\我的应用\\模型渲染AI\\node_modules\\wrangler\\templates\\middleware\\middleware-miniflare3-json-error.ts";
+
+				export * from "D:\\我的应用\\模型渲染AI\\.wrangler\\tmp\\pages-9X9QdQ\\functionsWorker-0.6265611909293463.mjs";
+
+				export const __INTERNAL_WRANGLER_MIDDLEWARE__ = [
+					
+					__MIDDLEWARE_0__.default,__MIDDLEWARE_1__.default
+				]
+				export default worker;

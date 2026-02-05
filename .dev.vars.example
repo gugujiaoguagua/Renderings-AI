@@ -1,0 +1,17 @@
+# 复制本文件为 .dev.vars，并填入你的真实值（不要提交 .dev.vars）
+# 本文件仅作为示例，可以提交到仓库
+
+RUNNINGHUB_API_KEY=
+
+# 默认工作流（模型渲染）
+RUNNINGHUB_WORKFLOW_ID=
+
+# 可选：按 workflowType 覆盖（GeneratingPage 里用到 IMAGE_REPAIR）
+RUNNINGHUB_WORKFLOW_ID_IMAGE_REPAIR=
+
+# 可选：不使用 workflowId 拼接 URL 时可直接指定 run URL
+RUNNINGHUB_WORKFLOW_RUN_URL=
+
+# 可选：查询接口地址（默认 https://www.runninghub.cn/openapi/v2/query）
+RUNNINGHUB_QUERY_URL=
+

@@ -1,3 +1,5 @@
+import { fetchJson } from '@/app/services/http';
+
 export interface RunningHubRunResponse {
   taskId: string;
   status: string;
@@ -39,42 +41,27 @@ export interface RunningHubQueryResponse {
 }
 
 export async function runninghubRunWorkflow(payload: unknown) {
-  const resp = await fetch('/api/runninghub/run', {
+  return await fetchJson<RunningHubRunResponse>('/api/runninghub/run', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || 'runninghub-run-failed');
-  }
-  return (await resp.json()) as RunningHubRunResponse;
 }
 
 export async function runninghubPing(workflowType?: string) {
-  const resp = await fetch('/api/runninghub/ping', {
+  return await fetchJson<RunningHubPingResponse>('/api/runninghub/ping', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ workflowType })
   });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || 'runninghub-ping-failed');
-  }
-  return (await resp.json()) as RunningHubPingResponse;
 }
 
 export async function runninghubQueryTask(taskId: string) {
-  const resp = await fetch('/api/runninghub/query', {
+  return await fetchJson<RunningHubQueryResponse>('/api/runninghub/query', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ taskId })
   });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || 'runninghub-query-failed');
-  }
-  return (await resp.json()) as RunningHubQueryResponse;
 }
 
 export async function runninghubWaitForResult(

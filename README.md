@@ -22,14 +22,15 @@
   
   ### 2) Pages Functions（无服务器接口）
   
-  - `POST /api/analyze`
-  - `POST /api/generate`
-  - `POST /api/runninghub/run`
-  - `POST /api/runninghub/query`
+  - `POST /api/analyze`（mock，前端生产环境会优先走它）
+  - `POST /api/generate`（mock，前端生产环境会优先走它）
+  - `POST /api/runninghub/ping`（检查 RunningHub 相关变量是否配置正确）
+  - `POST /api/runninghub/run`（调用 RunningHub 提交工作流任务）
+  - `POST /api/runninghub/query`（调用 RunningHub 查询任务结果）
   
-  当前默认实现是 mock（不会用到任何密钥），部署后应用即可直接访问。
+  其中 RunningHub 相关接口**需要你在 Cloudflare Pages 环境变量里配置密钥/工作流**，否则会返回 `missing-env` 错误。
   
-  ### 3) 环境变量（后续可在 Cloudflare 中配置）
+  ### 3) 环境变量（建议在 Cloudflare 中配置）
   
   你可以在 Cloudflare Pages → Settings → Environment variables 添加需要的密钥与配置；建议使用：
   
@@ -40,5 +41,17 @@
   - `RUNNINGHUB_WORKFLOW_RUN_URL`（可选，默认按 ID 拼接）
   - `RUNNINGHUB_QUERY_URL`（可选，默认 https://www.runninghub.cn/openapi/v2/query）
   
-  前端会优先调用同域 `/api/*`；若接口不可用会自动回退到本地 mock。
+  前端会优先调用同域 `/api/*`；其中 `analyze/generate` 在生产环境会优先走 Functions，开发环境默认走前端 mock；模型渲染相关功能会走 `runninghub/*`。
+
+  ### 4) 本地开发（推荐 wrangler 模拟线上）
+
+  - 复制一份变量文件：把 `.dev.vars.example` 复制成 `.dev.vars`，填上你的 `RUNNINGHUB_API_KEY` 与 `RUNNINGHUB_WORKFLOW_ID`（以及可选项）。
+  - 启动：本地需要同时跑前端与 Pages Functions
+    - 终端 A：运行 `npm run dev`（Vite，默认 `http://127.0.0.1:5173`）
+    - 终端 B：运行 `npm run dev:cf`（Wrangler Pages，`http://127.0.0.1:8788`，并代理到 5173）
+    - 建议用浏览器打开 `http://127.0.0.1:8788`，体验与线上一致（同域 `/api/*`）。
+
+  说明：`.dev.vars` 已在 `.gitignore` 中忽略；线上部署时 Cloudflare 会自动使用你在 Dashboard 配置的环境变量。
+
+
   
