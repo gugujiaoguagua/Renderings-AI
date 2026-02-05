@@ -60,6 +60,19 @@ function stripDataUrlBase64Prefix(value: string) {
   return value;
 }
 
+function validateWorkflowRunUrl(url: string) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return { ok: false as const, reason: 'protocol-not-https', host: u.host, path: u.pathname };
+    if (!u.pathname.startsWith('/run/workflow/')) {
+      return { ok: false as const, reason: 'path-not-workflow', host: u.host, path: u.pathname };
+    }
+    return { ok: true as const, host: u.host, path: u.pathname };
+  } catch {
+    return { ok: false as const, reason: 'invalid-url' };
+  }
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: Record<string, unknown> }) => {
   const apiKey = pickEnvValue(env, 'RUNNINGHUB_API_KEY');
   const rawBody = await request.text();
@@ -81,7 +94,26 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     return json({ error: 'missing-env', key: 'RUNNINGHUB_WORKFLOW_ID' }, { status: 500 });
   }
 
-  const runUrl = runUrlOverride ?? `https://api.runninghub.cn/run/workflow/${workflowId}`;
+  const defaultRunUrl = `https://api.runninghub.cn/run/workflow/${workflowId}`;
+  const runUrl = runUrlOverride ?? defaultRunUrl;
+
+  // 防止把 RUNNINGHUB_WORKFLOW_RUN_URL 误配成 /upload/image 之类的非工作流接口
+  if (runUrlOverride) {
+    const v = validateWorkflowRunUrl(runUrlOverride);
+    if (!v.ok) {
+      return json(
+        {
+          error: 'invalid-env',
+          key: 'RUNNINGHUB_WORKFLOW_RUN_URL',
+          reason: v.reason,
+          host: 'host' in v ? v.host : null,
+          path: 'path' in v ? v.path : null,
+          expectedExample: defaultRunUrl
+        },
+        { status: 500 }
+      );
+    }
+  }
 
   let runUrlHost: string | null = null;
   let runUrlPath: string | null = null;

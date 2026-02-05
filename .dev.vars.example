@@ -11,6 +11,7 @@ RUNNINGHUB_WORKFLOW_ID_IMAGE_REPAIR=
 
 # 可选：不使用默认拼接 URL 时可直接指定 run URL
 # 默认： https://api.runninghub.cn/run/workflow/${RUNNINGHUB_WORKFLOW_ID}
+# 注意：不要填成 https://www.runninghub.cn/upload/image（那是上传接口，不是工作流运行接口）
 RUNNINGHUB_WORKFLOW_RUN_URL=
 
 # 可选：当你前端没传 nodeInfoList（当前项目默认就是这样）时，用下面两项把 imageDataUrl 映射到工作流节点

@@ -49,6 +49,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
   const runUrlOverride = runUrlKeyUsed ? pickEnvValue(env, runUrlKeyUsed) : null;
   const runUrl = runUrlOverride ?? (workflowId ? `https://api.runninghub.cn/run/workflow/${workflowId}` : null);
 
+  const isRunUrlValid = runUrl ? (() => {
+    try {
+      const u = new URL(runUrl);
+      return u.protocol === 'https:' && u.pathname.startsWith('/run/workflow/');
+    } catch {
+      return false;
+    }
+  })() : false;
+
   let runUrlHost: string | null = null;
   let runUrlPath: string | null = null;
   if (runUrl) {
@@ -62,7 +71,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     }
   }
 
-  const ok = Boolean(pickEnvValue(env, 'RUNNINGHUB_API_KEY')) && Boolean(runUrlHost);
+  const ok = Boolean(pickEnvValue(env, 'RUNNINGHUB_API_KEY')) && Boolean(runUrlHost) && isRunUrlValid;
   return json({
     ok,
     workflowType,
