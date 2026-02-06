@@ -137,6 +137,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     return json({ error: 'runninghub-invalid-response', body: data }, { status: 502 });
   }
 
+  // 安全：不把上游结果直链（可能包含 query/token）直接下发给前端，改为同域代理地址
+  if (Array.isArray(data.results)) {
+    data.results = data.results.map((it, idx) => {
+      const url = it && typeof it.url === 'string' && it.url.trim()
+        ? `/api/runninghub/image?taskId=${encodeURIComponent(taskId)}&index=${idx}`
+        : undefined;
+      return { ...it, url };
+    });
+  }
+
   console.log('[runninghub/query] ok', { taskId: data.taskId, status: data.status });
   return json(data);
   } catch (err) {

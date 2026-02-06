@@ -9,9 +9,9 @@ import { toast } from 'sonner';
 
 interface PendingImage {
   image: ImageData;
+  file: File;
   name: string;
   size: number;
-  dataUrl?: string;
 }
 
 function formatBytes(bytes: number) {
@@ -95,26 +95,14 @@ export function ModelRenderPage() {
 
     accepted.forEach((item) => storageService.addRecentImage(item.image));
 
-    const readFileAsDataUrl = (file: File) =>
-      new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error('read-failed'));
-        reader.onload = () => resolve(String(reader.result));
-        reader.readAsDataURL(file);
-      });
+    const nextItems: PendingImage[] = accepted.map((item) => ({
+      image: item.image,
+      file: item.file,
+      name: item.name,
+      size: item.size
+    }));
 
-    Promise.all(
-      accepted.map(async (item) => {
-        try {
-          const dataUrl = await readFileAsDataUrl(item.file);
-          return { image: item.image, name: item.name, size: item.size, dataUrl } satisfies PendingImage;
-        } catch {
-          return { image: item.image, name: item.name, size: item.size } satisfies PendingImage;
-        }
-      })
-    ).then((nextItems) => {
-      setPendingImages((prev) => [...prev, ...nextItems]);
-    });
+    setPendingImages((prev) => [...prev, ...nextItems]);
   };
 
   const handleRemove = (id: string) => {
@@ -137,16 +125,11 @@ export function ModelRenderPage() {
       toast.info('请先上传至少 1 张图片');
       return;
     }
-    if (pendingImages.some((p) => !p.dataUrl)) {
-      toast.info('图片处理中，请稍后再试');
-      return;
-    }
-
     skipRevokeOnUnmountRef.current = true;
     navigate('/generating', {
       state: {
         batchImages: pendingImages.map((p) => p.image),
-        batchImageDataUrls: Object.fromEntries(pendingImages.map((p) => [p.image.id, p.dataUrl])),
+        batchImageFiles: Object.fromEntries(pendingImages.map((p) => [p.image.id, p.file])),
         returnTo: '/model-render'
       }
     });

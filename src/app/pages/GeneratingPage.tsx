@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
 } from '@/app/components/ui/alert-dialog';
 import { analyzeImage, generateImage, parseError } from '@/app/services/ai';
-import { runninghubPing, runninghubRunWorkflow, runninghubWaitForResult } from '@/app/services/runninghub';
+import { runninghubPing, runninghubRunWorkflowWithFile, runninghubWaitForResult } from '@/app/services/runninghub';
 import { storageService } from '@/app/services/storage';
 import { pointsService } from '@/app/services/points';
 import { authService } from '@/app/services/auth';
@@ -48,14 +48,45 @@ async function fetchAsDataUrl(url: string): Promise<string> {
   }
 }
 
+function extFromMime(mime: string) {
+  const m = (mime || '').toLowerCase();
+  if (m === 'image/jpeg') return 'jpg';
+  if (m === 'image/png') return 'png';
+  if (m === 'image/webp') return 'webp';
+  if (m === 'image/gif') return 'gif';
+  return 'bin';
+}
+
+async function fetchAsFile(url: string, nameBase = 'image'): Promise<File> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      if (url.startsWith('blob:')) throw new Error('blob-expired');
+      throw new Error('fetch-failed');
+    }
+
+    const blob = await resp.blob();
+    if (blob.type && !blob.type.startsWith('image/')) throw new Error('unsupported');
+
+    const ext = extFromMime(blob.type);
+    const filename = `${nameBase}.${ext}`;
+    return new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+  } catch {
+    if (url.startsWith('blob:')) throw new Error('blob-expired');
+    throw new Error('fetch-failed');
+  }
+}
+
 export function GeneratingPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const image = location.state?.image as ImageData | undefined;
   const analysis = location.state?.analysis as AnalysisResult | undefined;
   const batchImages = location.state?.batchImages as ImageData[] | undefined;
-  const batchImageDataUrls = location.state?.batchImageDataUrls as Record<string, string> | undefined;
-  const imageDataUrlFromState = location.state?.imageDataUrl as string | undefined;
+  const batchImageFiles = location.state?.batchImageFiles as Record<string, File> | undefined;
+  const batchImageDataUrls = location.state?.batchImageDataUrls as Record<string, string> | undefined; // legacy
+  const imageFileFromState = location.state?.imageFile as File | undefined;
+  const imageDataUrlFromState = location.state?.imageDataUrl as string | undefined; // legacy
   const returnTo = (location.state?.returnTo as string | undefined) ?? '/';
   const isBatch = Array.isArray(batchImages) && batchImages.length > 0;
   const accountId = authService.getAccountId();
@@ -113,14 +144,16 @@ export function GeneratingPage() {
 
         setCurrentStep('提交渲染任务...');
         setProgress(8);
-        const imageDataUrl = imageDataUrlFromState ?? (await fetchAsDataUrl(image.url));
-        const runResp = await runninghubRunWorkflow({
+        const file =
+          imageFileFromState ??
+          (await fetchAsFile(imageDataUrlFromState ?? image.url, image.id || 'image'));
+
+        const runResp = await runninghubRunWorkflowWithFile({
           workflowType,
           addMetadata: true,
-          nodeInfoList: [],
           instanceType: 'default',
           usePersonalQueue: 'false',
-          imageDataUrl
+          file
         });
         if (cancelledRef.current) return;
 
@@ -146,7 +179,8 @@ export function GeneratingPage() {
         });
 
         if (cancelledRef.current) return;
-        const url = queryResp.results?.[0]?.url;
+        const url =
+          queryResp.results?.[0]?.url || `/api/runninghub/image?taskId=${encodeURIComponent(taskId)}&index=0`;
         if (!url) throw new Error('generation-failed');
         generatedUrl = url;
       } else {
@@ -260,14 +294,16 @@ export function GeneratingPage() {
           const workflowType = returnTo === '/image-repair' || item.source === 'repair' ? 'IMAGE_REPAIR' : undefined;
           setCurrentStep(`正在提交第 ${i + 1}/${total} 张…`);
           setProgress(((i + 0.05) / total) * 100);
-          const imageDataUrl = batchImageDataUrls?.[item.id] ?? (await fetchAsDataUrl(item.url));
-          const runResp = await runninghubRunWorkflow({
+          const file =
+            batchImageFiles?.[item.id] ??
+            (await fetchAsFile(batchImageDataUrls?.[item.id] ?? item.url, item.id || 'image'));
+
+          const runResp = await runninghubRunWorkflowWithFile({
             workflowType,
             addMetadata: true,
-            nodeInfoList: [],
             instanceType: 'default',
             usePersonalQueue: 'false',
-            imageDataUrl
+            file
           });
           if (cancelledRef.current) return;
 
@@ -293,7 +329,8 @@ export function GeneratingPage() {
             }
           });
           if (cancelledRef.current) return;
-          const url = queryResp.results?.[0]?.url;
+          const url =
+            queryResp.results?.[0]?.url || `/api/runninghub/image?taskId=${encodeURIComponent(taskId)}&index=0`;
           if (!url) throw new Error('generation-failed');
           generatedUrl = url;
         } else {

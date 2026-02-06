@@ -48,6 +48,38 @@ export async function runninghubRunWorkflow(payload: unknown) {
   });
 }
 
+export async function runninghubRunWorkflowWithFile(options: {
+  file: File;
+  workflowType?: string;
+  addMetadata?: boolean;
+  nodeInfoList?: unknown;
+  instanceType?: string;
+  usePersonalQueue?: string | boolean;
+  webhookUrl?: string;
+  prompt?: string;
+}) {
+  const fd = new FormData();
+  fd.append('file', options.file, options.file.name || 'image');
+  if (options.workflowType) fd.append('workflowType', options.workflowType);
+  if (typeof options.addMetadata === 'boolean') fd.append('addMetadata', String(options.addMetadata));
+  if (typeof options.instanceType === 'string') fd.append('instanceType', options.instanceType);
+  if (typeof options.usePersonalQueue !== 'undefined') fd.append('usePersonalQueue', String(options.usePersonalQueue));
+  if (typeof options.webhookUrl === 'string') fd.append('webhookUrl', options.webhookUrl);
+  if (typeof options.prompt === 'string') fd.append('prompt', options.prompt);
+  if (typeof options.nodeInfoList !== 'undefined') {
+    try {
+      fd.append('nodeInfoList', JSON.stringify(options.nodeInfoList));
+    } catch {
+      // ignore
+    }
+  }
+
+  return await fetchJson<RunningHubRunResponse>('/api/runninghub/run', {
+    method: 'POST',
+    body: fd
+  });
+}
+
 export async function runninghubPing(workflowType?: string) {
   return await fetchJson<RunningHubPingResponse>('/api/runninghub/ping', {
     method: 'POST',

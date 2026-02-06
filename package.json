@@ -6,7 +6,9 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "dev:cf": "wrangler pages dev --proxy 5173 --port 8788"
+    "dev:cf": "wrangler pages dev --proxy 5173 --port 8788",
+    "api:dev": "node server/index.js",
+    "api:start": "node server/index.js"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -44,7 +46,9 @@
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
     "date-fns": "3.6.0",
+    "dotenv": "^16.4.5",
     "embla-carousel-react": "8.6.0",
+    "express": "^4.21.2",
     "input-otp": "1.4.2",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
