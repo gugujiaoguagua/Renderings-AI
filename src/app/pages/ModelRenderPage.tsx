@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, History, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Card } from '@/app/components/ui/card';
+import { RenderJobsDialog } from '@/app/components/RenderJobsDialog';
 import { storageService } from '@/app/services/storage';
 import type { ImageData } from '@/app/types';
 import { toast } from 'sonner';
@@ -28,6 +29,7 @@ export function ModelRenderPage() {
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const pendingImagesRef = useRef<PendingImage[]>([]);
   const skipRevokeOnUnmountRef = useRef(false);
+  const [showJobsDialog, setShowJobsDialog] = useState(false);
 
   const canAddMore = pendingImages.length < 10;
   const remainingSlots = useMemo(() => Math.max(0, 10 - pendingImages.length), [pendingImages.length]);
@@ -146,16 +148,24 @@ export function ModelRenderPage() {
     <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/')}> 
             <ArrowLeft className="size-4 mr-1" />
             返回
           </Button>
           <h1 className="flex-1 text-center font-semibold">模型渲染</h1>
-          <div className="w-20" />
+          <div className="w-28 flex justify-end">
+            <Button variant="ghost" size="sm" onClick={() => setShowJobsDialog(true)}>
+              <History className="size-4 mr-1" />
+              渲染记录
+            </Button>
+          </div>
         </div>
       </header>
 
+
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+        <RenderJobsDialog open={showJobsDialog} onOpenChange={setShowJobsDialog} />
+
         <Card
           className="p-10 border-2 border-dashed border-purple-200 bg-white/70 hover:bg-white transition-colors cursor-pointer"
           onClick={handleUploadClick}

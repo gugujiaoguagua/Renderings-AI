@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Loader2, X } from 'lucide-react';
+import { History, Loader2, X } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Progress } from '@/app/components/ui/progress';
 import {
@@ -16,9 +16,11 @@ import {
 import { analyzeImage, generateImage, parseError } from '@/app/services/ai';
 import { runninghubPing, runninghubRunWorkflowWithFile, runninghubWaitForResult } from '@/app/services/runninghub';
 import { storageService } from '@/app/services/storage';
+import { renderJobsService } from '@/app/services/renderJobs';
 import { pointsService } from '@/app/services/points';
 import { authService } from '@/app/services/auth';
-import type { ImageData, AnalysisResult, GenerationResult } from '@/app/types';
+import { RenderJobsDialog } from '@/app/components/RenderJobsDialog';
+import type { ImageData, AnalysisResult, GenerationResult, RenderJob } from '@/app/types';
 import { toast } from 'sonner';
 
 function calcCostPointsByMs(elapsedMs: number) {
@@ -77,6 +79,75 @@ async function fetchAsFile(url: string, nameBase = 'image'): Promise<File> {
   }
 }
 
+async function loadImageFromBlob(blob: Blob): Promise<{ width: number; height: number; draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void; cleanup: () => void }> {
+  // Prefer createImageBitmap for performance
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyGlobal: any = globalThis as any;
+  if (typeof anyGlobal.createImageBitmap === 'function') {
+    const bitmap = await anyGlobal.createImageBitmap(blob);
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      draw: (ctx, w, h) => ctx.drawImage(bitmap, 0, 0, w, h),
+      cleanup: () => bitmap.close?.(),
+    };
+  }
+
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = url;
+
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('image-load-failed'));
+  });
+
+  return {
+    width: img.naturalWidth || img.width,
+    height: img.naturalHeight || img.height,
+    draw: (ctx, w, h) => ctx.drawImage(img, 0, 0, w, h),
+    cleanup: () => URL.revokeObjectURL(url),
+  };
+}
+
+async function createThumbnailDataUrlFromBlob(blob: Blob, maxSize = 512, quality = 0.86): Promise<string> {
+  const img = await loadImageFromBlob(blob);
+  try {
+    const scale = Math.min(1, maxSize / Math.max(1, Math.max(img.width, img.height)));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('canvas-context-failed');
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    img.draw(ctx, w, h);
+
+    return canvas.toDataURL('image/jpeg', quality);
+  } finally {
+    img.cleanup();
+  }
+}
+
+async function persistImageForHistory(image: ImageData, file?: File): Promise<ImageData> {
+  if (!image?.url || !image.url.startsWith('blob:')) return image;
+
+  const blob = file ?? (await (await fetch(image.url)).blob());
+  const thumb = await createThumbnailDataUrlFromBlob(blob, 512, 0.86);
+  return { ...image, url: thumb };
+}
+
+async function persistUrlForHistory(url: string): Promise<string> {
+  if (!url?.startsWith('blob:')) return url;
+  const blob = await (await fetch(url)).blob();
+  return createThumbnailDataUrlFromBlob(blob, 768, 0.9);
+}
+
 export function GeneratingPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -98,6 +169,7 @@ export function GeneratingPage() {
   const cancelledRef = useRef(false);
   const [batchIndex, setBatchIndex] = useState(0);
   const [currentImage, setCurrentImage] = useState<ImageData | undefined>(image);
+  const [showJobsDialog, setShowJobsDialog] = useState(false);
 
   useEffect(() => {
     // Allow background after 3 seconds
@@ -130,6 +202,10 @@ export function GeneratingPage() {
     const isModelRender =
       image.source === 'model' || returnTo === '/model-render' || image.source === 'repair' || returnTo === '/image-repair';
     let resolvedAnalysis: AnalysisResult | undefined = analysis;
+
+    let originalFileForPersist: File | undefined;
+    let jobForThisRun: RenderJob | undefined;
+
     try {
       let generatedUrl: string;
       if (isModelRender) {
@@ -148,6 +224,15 @@ export function GeneratingPage() {
           imageFileFromState ??
           (await fetchAsFile(imageDataUrlFromState ?? image.url, image.id || 'image'));
 
+        originalFileForPersist = file;
+
+        let originalThumbUrl: string | undefined;
+        try {
+          originalThumbUrl = await createThumbnailDataUrlFromBlob(file, 512, 0.86);
+        } catch {
+          // ignore thumbnail errors
+        }
+
         const runResp = await runninghubRunWorkflowWithFile({
           workflowType,
           addMetadata: true,
@@ -158,6 +243,23 @@ export function GeneratingPage() {
         if (cancelledRef.current) return;
 
         const taskId = runResp.taskId;
+
+        jobForThisRun = {
+          jobId: `rh-${taskId}`,
+          kind: workflowType === 'IMAGE_REPAIR' ? 'image-repair' : 'model-render',
+          title: workflowType === 'IMAGE_REPAIR' ? '图片修复' : '模型渲染',
+          taskId,
+          status: 'rendering',
+          statusText: '已提交，等待渲染…',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          timeoutMs: 10 * 60_000,
+          originalThumbUrl,
+          originalUrl: image.url,
+          originalImageId: image.id,
+        };
+        renderJobsService.upsert(jobForThisRun);
+
         resolvedAnalysis = {
           summary: '模型渲染',
           details: `taskId: ${taskId}`,
@@ -173,8 +275,12 @@ export function GeneratingPage() {
           isCancelled: () => cancelledRef.current,
           onTick: (status) => {
             if (cancelledRef.current) return;
-            setCurrentStep(`渲染中（${status}）...`);
+            const text = `渲染中（${status}）...`;
+            setCurrentStep(text);
             setProgress((p) => Math.min(94, Math.max(p, 18) + 2));
+            if (jobForThisRun?.jobId) {
+              renderJobsService.update(jobForThisRun.jobId, { status: 'rendering', statusText: text });
+            }
           }
         });
 
@@ -229,24 +335,57 @@ export function GeneratingPage() {
         return;
       }
 
-      // Save to history
+      // Save to history（把 blob URL 转成可持久化的缩略图，避免历史记录被跳过）
+      let originalImageForHistory: ImageData = image;
+      try {
+        originalImageForHistory = await persistImageForHistory(image, originalFileForPersist ?? imageFileFromState);
+      } catch {
+        // ignore
+      }
+
+      let generatedUrlForHistory = generatedUrl;
+      try {
+        generatedUrlForHistory = await persistUrlForHistory(generatedUrl);
+      } catch {
+        // ignore
+      }
+
       const result: GenerationResult = {
         id: `gen-${Date.now()}`,
-        originalImage: image,
-        generatedUrl,
+        originalImage: originalImageForHistory,
+        generatedUrl: generatedUrlForHistory,
         analysis: resolvedAnalysis,
         timestamp: Date.now()
       };
 
       storageService.addToHistory(result);
 
-      // Navigate to result page
-      navigate('/result', { state: { result }, replace: true });
+      if (jobForThisRun?.jobId) {
+        renderJobsService.update(jobForThisRun.jobId, {
+          status: 'success',
+          statusText: '渲染完成',
+          resultUrl: generatedUrl,
+          resultId: result.id,
+          completedAt: Date.now(),
+        });
+      }
+
+      // Navigate to result page（自动打开预览）
+      navigate('/result', { state: { result, autoPreview: true }, replace: true });
 
     } catch (error) {
       if (cancelledRef.current) return;
 
       const parsedError = parseError(error);
+      if (jobForThisRun?.jobId) {
+        renderJobsService.update(jobForThisRun.jobId, {
+          status: 'failed',
+          statusText: '渲染失败',
+          errorMessage: parsedError.message,
+          completedAt: Date.now(),
+        });
+      }
+
       navigate('/error', {
         state: { error: parsedError, image, analysis: resolvedAnalysis },
         replace: true
@@ -288,6 +427,9 @@ export function GeneratingPage() {
         setBatchIndex(i);
         setCurrentImage(item);
 
+        let jobForThisItem: RenderJob | undefined;
+        let fileForThisItem: File | undefined;
+
         let resolvedAnalysis: AnalysisResult;
         let generatedUrl: string;
         if (isModelRenderBatch || item.source === 'model' || item.source === 'repair') {
@@ -297,6 +439,15 @@ export function GeneratingPage() {
           const file =
             batchImageFiles?.[item.id] ??
             (await fetchAsFile(batchImageDataUrls?.[item.id] ?? item.url, item.id || 'image'));
+
+          fileForThisItem = file;
+
+          let originalThumbUrl: string | undefined;
+          try {
+            originalThumbUrl = await createThumbnailDataUrlFromBlob(file, 512, 0.86);
+          } catch {
+            // ignore thumbnail errors
+          }
 
           const runResp = await runninghubRunWorkflowWithFile({
             workflowType,
@@ -308,6 +459,23 @@ export function GeneratingPage() {
           if (cancelledRef.current) return;
 
           const taskId = runResp.taskId;
+
+          jobForThisItem = {
+            jobId: `rh-${taskId}`,
+            kind: workflowType === 'IMAGE_REPAIR' ? 'image-repair' : 'model-render',
+            title: workflowType === 'IMAGE_REPAIR' ? '图片修复' : '模型渲染',
+            taskId,
+            status: 'rendering',
+            statusText: `批量渲染中（第 ${i + 1}/${total} 张）…`,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            timeoutMs: 10 * 60_000,
+            originalThumbUrl,
+            originalUrl: item.url,
+            originalImageId: item.id,
+          };
+          renderJobsService.upsert(jobForThisItem);
+
           resolvedAnalysis = {
             summary: '模型渲染',
             details: `taskId: ${taskId}`,
@@ -323,9 +491,15 @@ export function GeneratingPage() {
             pollIntervalMs: 2000,
             timeoutMs: 10 * 60_000,
             isCancelled: () => cancelledRef.current,
-            onTick: () => {
+            onTick: (status) => {
               if (cancelledRef.current) return;
               setProgress((p) => Math.min(((i + 0.93) / total) * 100, Math.max(p, ((i + 0.15) / total) * 100) + 1));
+              if (jobForThisItem?.jobId) {
+                renderJobsService.update(jobForThisItem.jobId, {
+                  status: 'rendering',
+                  statusText: `批量渲染中（${status}，第 ${i + 1}/${total} 张）…`,
+                });
+              }
             }
           });
           if (cancelledRef.current) return;
@@ -368,15 +542,40 @@ export function GeneratingPage() {
         setCurrentStep(`正在保存第 ${i + 1}/${total} 张…`);
         setProgress(((i + 0.97) / total) * 100);
 
+        let originalImageForHistory: ImageData = item;
+        try {
+          originalImageForHistory = await persistImageForHistory(item, fileForThisItem ?? batchImageFiles?.[item.id]);
+        } catch {
+          // ignore
+        }
+
+        let generatedUrlForHistory = generatedUrl;
+        try {
+          generatedUrlForHistory = await persistUrlForHistory(generatedUrl);
+        } catch {
+          // ignore
+        }
+
         const result: GenerationResult = {
           id: `gen-${Date.now()}-${i}`,
-          originalImage: item,
-          generatedUrl,
+          originalImage: originalImageForHistory,
+          generatedUrl: generatedUrlForHistory,
           analysis: resolvedAnalysis,
           timestamp: Date.now()
         };
 
         storageService.addToHistory(result);
+
+        if (jobForThisItem?.jobId) {
+          renderJobsService.update(jobForThisItem.jobId, {
+            status: 'success',
+            statusText: '渲染完成',
+            resultUrl: generatedUrl,
+            resultId: result.id,
+            completedAt: Date.now(),
+          });
+        }
+
         setProgress(((i + 1) / total) * 100);
       }
 
@@ -417,6 +616,8 @@ export function GeneratingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex items-center justify-center p-4">
+      <RenderJobsDialog open={showJobsDialog} onOpenChange={setShowJobsDialog} />
+
       <div className="w-full max-w-md space-y-8">
         {/* Animation */}
         <div className="flex justify-center">
@@ -461,6 +662,11 @@ export function GeneratingPage() {
 
         {/* Actions */}
         <div className="flex flex-col gap-3">
+          <Button variant="outline" onClick={() => setShowJobsDialog(true)} className="w-full">
+            <History className="size-4 mr-2" />
+            渲染记录
+          </Button>
+
           {canBackground && (
             <Button
               variant="outline"

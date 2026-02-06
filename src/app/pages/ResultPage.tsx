@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Download, Share2, RefreshCw, Image as ImageIcon, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
@@ -27,12 +27,22 @@ export function ResultPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const result = location.state?.result as GenerationResult | undefined;
+  const autoPreview = Boolean((location.state as { autoPreview?: boolean } | undefined)?.autoPreview);
+  const autoPreviewDoneRef = useRef(false);
 
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [feedback, setFeedback] = useState<'good' | 'bad' | null>(null);
   const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+
+  useEffect(() => {
+    if (!autoPreview) return;
+    if (autoPreviewDoneRef.current) return;
+    if (!imageLoaded || imageError) return;
+    setShowPreviewDialog(true);
+    autoPreviewDoneRef.current = true;
+  }, [autoPreview, imageLoaded, imageError]);
 
   if (!result) {
     navigate('/');
