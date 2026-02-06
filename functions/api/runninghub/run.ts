@@ -364,10 +364,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
       runUrlPath = null;
     }
 
-    // RunningHub 工作流接口要求 nodeInfoList 非空，且每项包含 nodeId + params。
-    type NodeInfoItem = { nodeId: string; params: Record<string, unknown> };
+    // RunningHub 工作流接口要求 nodeInfoList 非空。
+    // 不同网关入口的 payload 结构可能不同：
+    // - openapi_v2：nodeInfoList[{ nodeId, fieldName, fieldValue, fieldType? }]
+    // - call-api：nodeInfoList[{ nodeId, nodeParams }]
+    type NodeInfoItemOpenApi = { nodeId: string; fieldName: string; fieldValue: unknown; fieldType?: string };
     const rawNodeInfoList = src.nodeInfoList;
-    let nodeInfoList: NodeInfoItem[] | null = null;
+    let nodeInfoList: NodeInfoItemOpenApi[] | null = null;
     let usedSchema: 'client-nodeInfoList' | 'env-mapped-image' | 'env-mapped-file' = 'client-nodeInfoList';
 
     // debug meta (do NOT include large payloads or secrets)
@@ -383,25 +386,59 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     let uploadUsedBearer: boolean | null = null;
     let uploadedFileKeyPreview: string | null = null;
 
+    // normalize client-provided nodeInfoList
     if (Array.isArray(rawNodeInfoList) && rawNodeInfoList.length > 0) {
-      const normalized: NodeInfoItem[] = [];
+      const normalized: NodeInfoItemOpenApi[] = [];
+
       for (const it of rawNodeInfoList) {
         if (!it || typeof it !== 'object') continue;
         const item = it as Record<string, unknown>;
-        const nodeId = item.nodeId;
+
+        const nodeIdRaw = item.nodeId;
+        if (typeof nodeIdRaw !== 'string' || !nodeIdRaw.trim()) continue;
+        const nodeId = nodeIdRaw.trim();
+
+        // preferred: openapi style
+        const fieldNameRaw = item.fieldName;
+        if (typeof fieldNameRaw === 'string' && fieldNameRaw.trim()) {
+          const fieldName = fieldNameRaw.trim();
+          const fieldValue = item.fieldValue;
+          const fieldType = typeof item.fieldType === 'string' ? item.fieldType : undefined;
+          normalized.push({ nodeId, fieldName, fieldValue, fieldType });
+          continue;
+        }
+
+        // compat: previous params style
         const params = item.params;
-        if (typeof nodeId !== 'string' || !nodeId.trim()) continue;
-        if (!params || typeof params !== 'object') continue;
-        normalized.push({ nodeId: nodeId.trim(), params: params as Record<string, unknown> });
+        if (params && typeof params === 'object') {
+          const p = params as Record<string, unknown>;
+
+          // fileKey/fileValue style
+          if (typeof p.fileKey === 'string' && p.fileKey.trim() && Object.prototype.hasOwnProperty.call(p, 'fileValue')) {
+            normalized.push({ nodeId, fieldName: p.fileKey.trim(), fieldValue: p.fileValue, fieldType: 'file' });
+            continue;
+          }
+
+          // single param style
+          const keys = Object.keys(p);
+          if (keys.length === 1) {
+            const k = keys[0];
+            normalized.push({ nodeId, fieldName: k, fieldValue: p[k] });
+            continue;
+          }
+        }
       }
+
       nodeInfoList = normalized.length > 0 ? normalized : null;
     }
 
     // 前端未填 nodeInfoList 时：支持两种自动映射
     // - multipart: file → upload → file ref
-    // - json: imageDataUrl → base64
+    // - json: imageDataUrl → base64（仅用于兼容）
     if (!nodeInfoList) {
-      const imageNodeIdKey = pickEnvValue(env, `RUNNINGHUB_IMAGE_NODE_ID${suffix}`) ? `RUNNINGHUB_IMAGE_NODE_ID${suffix}` : 'RUNNINGHUB_IMAGE_NODE_ID';
+      const imageNodeIdKey = pickEnvValue(env, `RUNNINGHUB_IMAGE_NODE_ID${suffix}`)
+        ? `RUNNINGHUB_IMAGE_NODE_ID${suffix}`
+        : 'RUNNINGHUB_IMAGE_NODE_ID';
       const imageParamKeyKey = pickEnvValue(env, `RUNNINGHUB_IMAGE_PARAM_KEY${suffix}`)
         ? `RUNNINGHUB_IMAGE_PARAM_KEY${suffix}`
         : 'RUNNINGHUB_IMAGE_PARAM_KEY';
@@ -440,12 +477,18 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
             .toLowerCase();
         mappedImageParamMode = paramMode;
 
-        const params =
-          paramMode === 'direct'
-            ? { [imageParamKey]: injectedValue }
-            : { fileKey: imageParamKey, fileValue: injectedValue };
+        const explicitFieldType =
+          pickEnvValue(env, `RUNNINGHUB_IMAGE_FIELD_TYPE${suffix}`) ?? pickEnvValue(env, 'RUNNINGHUB_IMAGE_FIELD_TYPE');
+        const fieldType = explicitFieldType ? explicitFieldType : paramMode === 'direct' ? undefined : 'file';
 
-        nodeInfoList = [{ nodeId: imageNodeId, params }];
+        nodeInfoList = [
+          {
+            nodeId: imageNodeId,
+            fieldName: imageParamKey,
+            fieldValue: injectedValue,
+            ...(fieldType ? { fieldType } : {})
+          }
+        ];
       } else {
         const imageDataUrl = src.imageDataUrl;
         if (typeof imageDataUrl !== 'string' || !imageDataUrl.trim()) {
@@ -468,9 +511,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
         nodeInfoList = [
           {
             nodeId: imageNodeId,
-            params: {
-              [imageParamKey]: base64
-            }
+            fieldName: imageParamKey,
+            fieldValue: base64
           }
         ];
       }
@@ -481,12 +523,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
         pickEnvValue(env, `RUNNINGHUB_DEFAULT_PROMPT${suffix}`) ?? pickEnvValue(env, 'RUNNINGHUB_DEFAULT_PROMPT') ?? '';
       const prompt = promptFromClient || promptFromEnv;
       if (prompt) {
-        const promptNodeIdKey =
-          pickEnvValue(env, `RUNNINGHUB_PROMPT_NODE_ID${suffix}`) ? `RUNNINGHUB_PROMPT_NODE_ID${suffix}` : 'RUNNINGHUB_PROMPT_NODE_ID';
-        const promptParamKeyKey =
-          pickEnvValue(env, `RUNNINGHUB_PROMPT_PARAM_KEY${suffix}`)
-            ? `RUNNINGHUB_PROMPT_PARAM_KEY${suffix}`
-            : 'RUNNINGHUB_PROMPT_PARAM_KEY';
+        const promptNodeIdKey = pickEnvValue(env, `RUNNINGHUB_PROMPT_NODE_ID${suffix}`)
+          ? `RUNNINGHUB_PROMPT_NODE_ID${suffix}`
+          : 'RUNNINGHUB_PROMPT_NODE_ID';
+        const promptParamKeyKey = pickEnvValue(env, `RUNNINGHUB_PROMPT_PARAM_KEY${suffix}`)
+          ? `RUNNINGHUB_PROMPT_PARAM_KEY${suffix}`
+          : 'RUNNINGHUB_PROMPT_PARAM_KEY';
 
         const promptNodeId = pickEnvValue(env, promptNodeIdKey) ?? '4';
         const promptParamKey = pickEnvValue(env, promptParamKeyKey) ?? 'prompt';
@@ -495,9 +537,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
         nodeInfoList.push({
           nodeId: promptNodeId,
-          params: {
-            [promptParamKey]: prompt
-          }
+          fieldName: promptParamKey,
+          fieldValue: prompt
         });
       }
     }
@@ -507,17 +548,40 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
     const instanceType = typeof src.instanceType === 'string' ? src.instanceType.trim() : '';
     const webhookUrl = typeof src.webhookUrl === 'string' ? src.webhookUrl.trim() : '';
 
-    const payload: Record<string, unknown> = {
+    const basePayload: Record<string, unknown> = {
       nodeInfoList
     };
-    if (addMetadata !== null) payload.addMetadata = addMetadata;
-    if (usePersonalQueue !== null) payload.usePersonalQueue = usePersonalQueue;
-    if (instanceType) payload.instanceType = instanceType;
-    if (webhookUrl) payload.webhookUrl = webhookUrl;
+    if (addMetadata !== null) basePayload.addMetadata = addMetadata;
+    if (usePersonalQueue !== null) basePayload.usePersonalQueue = usePersonalQueue;
+    if (instanceType) basePayload.instanceType = instanceType;
+    if (webhookUrl) basePayload.webhookUrl = webhookUrl;
 
-    const upstreamBodyText = JSON.stringify(payload);
+    const baseUpstreamBodyText = JSON.stringify(basePayload);
 
-    const nodeInfoListSummary = (nodeInfoList ?? []).map((it) => ({ nodeId: it.nodeId, keys: Object.keys(it.params ?? {}) }));
+    const nodeInfoListSummary = (nodeInfoList ?? []).map((it) => ({
+      nodeId: it.nodeId,
+      fieldName: it.fieldName,
+      fieldType: it.fieldType ?? null
+    }));
+
+    const toCallApiNodeInfoList = (list: NodeInfoItemOpenApi[]) => {
+      return list.map((x) => {
+        const nodeId = String(x.nodeId || '');
+        const fieldName = String(x.fieldName || '');
+        const fieldValue = x.fieldValue;
+        const isFile = String(x.fieldType || '').toLowerCase() === 'file';
+        const nodeParams = isFile ? { fileKey: fieldName, fileValue: fieldValue } : { [fieldName]: fieldValue };
+        return { nodeId, nodeParams };
+      });
+    };
+
+    const buildUpstreamBodyTextForUrl = (url: string) => {
+      const isCallApi = url.includes('/call-api/');
+      const payload: Record<string, unknown> = { ...basePayload };
+      if (isCallApi) payload.nodeInfoList = toCallApiNodeInfoList(nodeInfoList ?? []);
+      return JSON.stringify(payload);
+    };
+
     const debug = {
       workflowType,
       usedSchema,
@@ -525,7 +589,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
       runUrlPath,
       isMultipart,
       clientBodyBytes: rawBodyBytes,
-      upstreamBodyBytes: upstreamBodyText.length,
+      upstreamBodyBytes: baseUpstreamBodyText.length,
+
       nodeInfoListSummary,
       mappedImageNodeId,
       mappedImageParamKey,
@@ -614,7 +679,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
             Authorization: `Bearer ${apiKey}`,
             'X-API-KEY': apiKey
           },
-          body: upstreamBodyText
+          body: buildUpstreamBodyTextForUrl(url)
+
         });
 
         attempts.push({ url, status: r.status });
