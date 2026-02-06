@@ -94,9 +94,11 @@ export function RenderJobsDialog({
           <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
             {visibleJobs.map((job) => {
               const timeoutMs = job.timeoutMs ?? 10 * 60_000;
-              const elapsedMs = Math.max(0, now - job.createdAt);
+              const endAt = job.completedAt ?? now;
+              const elapsedMs = Math.max(0, endAt - job.createdAt);
               const remainingMs = Math.max(0, timeoutMs - elapsedMs);
               const createdText = new Date(job.createdAt).toLocaleString();
+
 
               return (
                 <div key={job.jobId} className="border rounded-lg p-3 flex gap-3">
