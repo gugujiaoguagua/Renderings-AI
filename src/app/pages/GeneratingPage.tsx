@@ -148,6 +148,29 @@ async function persistUrlForHistory(url: string): Promise<string> {
   return createThumbnailDataUrlFromBlob(blob, 768, 0.9);
 }
 
+async function reencodeToJpegFile(fileOrBlob: File | Blob, nameBase = 'image'): Promise<File> {
+  const img = await loadImageFromBlob(fileOrBlob);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('canvas-failed');
+
+    // Handle transparency by filling white background
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    img.draw(ctx, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('to-blob-failed');
+
+    return new File([blob], `${nameBase}.jpg`, { type: 'image/jpeg' });
+  } finally {
+    img.cleanup();
+  }
+}
+
 export function GeneratingPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -170,6 +193,7 @@ export function GeneratingPage() {
   const [batchIndex, setBatchIndex] = useState(0);
   const [currentImage, setCurrentImage] = useState<ImageData | undefined>(image);
   const [showJobsDialog, setShowJobsDialog] = useState(false);
+  const lastJobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Allow background after 3 seconds
@@ -220,9 +244,18 @@ export function GeneratingPage() {
 
         setCurrentStep('提交渲染任务...');
         setProgress(8);
-        const file =
+        let file =
           imageFileFromState ??
           (await fetchAsFile(imageDataUrlFromState ?? image.url, image.id || 'image'));
+
+        // Re-encode to ensure pure JPG structure for Qwen/RunningHub workflow
+        try {
+          setCurrentStep('重编码图片...');
+          file = await reencodeToJpegFile(file, image.id || 'image');
+        } catch (e) {
+          console.error('Failed to re-encode image:', e);
+          // Fallback to original file
+        }
 
         originalFileForPersist = file;
 
@@ -258,6 +291,7 @@ export function GeneratingPage() {
           originalUrl: image.url,
           originalImageId: image.id,
         };
+        lastJobIdRef.current = jobForThisRun.jobId;
         renderJobsService.upsert(jobForThisRun);
 
         resolvedAnalysis = {
@@ -436,9 +470,18 @@ export function GeneratingPage() {
           const workflowType = returnTo === '/image-repair' || item.source === 'repair' ? 'IMAGE_REPAIR' : undefined;
           setCurrentStep(`正在提交第 ${i + 1}/${total} 张…`);
           setProgress(((i + 0.05) / total) * 100);
-          const file =
+          let file =
             batchImageFiles?.[item.id] ??
             (await fetchAsFile(batchImageDataUrls?.[item.id] ?? item.url, item.id || 'image'));
+
+          // Re-encode to ensure pure JPG structure for Qwen/RunningHub workflow
+          try {
+            setCurrentStep(`重编码第 ${i + 1}/${total} 张…`);
+            file = await reencodeToJpegFile(file, item.id || 'image');
+          } catch (e) {
+            console.error('Failed to re-encode batch image:', e);
+            // Fallback to original file
+          }
 
           fileForThisItem = file;
 
@@ -474,6 +517,7 @@ export function GeneratingPage() {
             originalUrl: item.url,
             originalImageId: item.id,
           };
+          lastJobIdRef.current = jobForThisItem.jobId;
           renderJobsService.upsert(jobForThisItem);
 
           resolvedAnalysis = {
@@ -587,6 +631,15 @@ export function GeneratingPage() {
       if (cancelledRef.current) return;
 
       const parsedError = parseError(error);
+      if (lastJobIdRef.current) {
+        renderJobsService.update(lastJobIdRef.current, {
+          status: 'failed',
+          statusText: '渲染失败',
+          errorMessage: parsedError.message,
+          completedAt: Date.now(),
+        });
+      }
+
       navigate('/error', {
         state: { error: parsedError, image: lastImage ?? currentImage, analysis: lastAnalysis },
         replace: true
@@ -600,6 +653,13 @@ export function GeneratingPage() {
 
   const confirmCancel = () => {
     cancelledRef.current = true;
+    if (lastJobIdRef.current) {
+      renderJobsService.update(lastJobIdRef.current, {
+        status: 'cancelled',
+        statusText: '用户取消',
+        completedAt: Date.now(),
+      });
+    }
     navigate(returnTo, { replace: true });
   };
 
