@@ -79,14 +79,22 @@ function validateWorkflowRunUrl(url: string) {
   try {
     const u = new URL(url);
     if (u.protocol !== 'https:') return { ok: false as const, reason: 'protocol-not-https', host: u.host, path: u.pathname };
-    if (!u.pathname.startsWith('/run/workflow/')) {
+
+    const okPath =
+      u.pathname.startsWith('/run/workflow/') ||
+      u.pathname.startsWith('/openapi/v2/run/workflow/') ||
+      u.pathname.startsWith('/call-api/run/workflow/');
+
+    if (!okPath) {
       return { ok: false as const, reason: 'path-not-workflow', host: u.host, path: u.pathname };
     }
+
     return { ok: true as const, host: u.host, path: u.pathname };
   } catch {
     return { ok: false as const, reason: 'invalid-url' };
   }
 }
+
 
 function safeHostPath(rawUrl: string) {
   try {
@@ -534,15 +542,66 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
     console.log('[runninghub/run] start', debug);
 
-    const altRunUrl = (() => {
-      if (!runUrlHost || !runUrlPath) return null;
-      if (runUrlHost === 'www.runninghub.cn') return `https://api.runninghub.cn${runUrlPath}`;
-      if (runUrlHost === 'api.runninghub.cn') return `https://www.runninghub.cn${runUrlPath}`;
-      return null;
-    })();
+    const buildRunCandidates = () => {
+      const out: string[] = [];
+      const add = (u: string | null) => {
+        if (!u) return;
+        if (out.includes(u)) return;
+        out.push(u);
+      };
 
-    const candidates = [runUrl, altRunUrl].filter((v): v is string => Boolean(v));
+      const addGatewayByHost = (host: string, id: string) => {
+        add(`https://${host}/openapi/v2/run/workflow/${id}`);
+        add(`https://${host}/call-api/run/workflow/${id}`);
+      };
+
+      const parseHostsFromEnv = (value: string | null) => {
+        if (!value) return [];
+        return value
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((s) => s.replace(/^https?:\/\//i, '').replace(/\/$/, ''));
+      };
+
+      // primary
+      add(runUrl);
+
+      // swap host with same path
+      if (runUrlHost && runUrlPath) {
+        if (runUrlHost === 'www.runninghub.cn') add(`https://api.runninghub.cn${runUrlPath}`);
+        if (runUrlHost === 'api.runninghub.cn') add(`https://www.runninghub.cn${runUrlPath}`);
+
+        // if currently using /run/workflow/:id, also try OpenAPI gateway path
+        if (runUrlPath.startsWith('/run/workflow/')) {
+          add(`https://${runUrlHost}/openapi/v2${runUrlPath}`);
+          add(`https://${runUrlHost}/call-api${runUrlPath}`);
+        }
+      }
+
+      // common gateways by workflowId (avoid relying on RUNNINGHUB_API_BASE)
+      // + 国际版候选入口（默认加入 runninghub.ai；也可用 env 扩展）
+      if (workflowId) {
+        // CN
+        addGatewayByHost('www.runninghub.cn', workflowId);
+        addGatewayByHost('api.runninghub.cn', workflowId);
+
+        // Global / International
+        addGatewayByHost('www.runninghub.ai', workflowId);
+        addGatewayByHost('api.runninghub.ai', workflowId);
+
+        // optional extra hosts, comma-separated, e.g. "www.runninghub.io,api.runninghub.io"
+        const extraHosts = parseHostsFromEnv(pickEnvValue(env, `RUNNINGHUB_RUN_HOSTS${suffix}`) ?? pickEnvValue(env, 'RUNNINGHUB_RUN_HOSTS'));
+        for (const h of extraHosts) addGatewayByHost(h, workflowId);
+      }
+
+      return out;
+    };
+
+
+    const candidates = buildRunCandidates();
     const attempts: Array<{ url: string; status?: number; error?: string }> = [];
+
 
     let resp: Response | null = null;
     for (const url of candidates) {
@@ -560,10 +619,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
         attempts.push({ url, status: r.status });
 
-        // 401 很可能是域名/网关不接受 OpenAPI Key（例如 www 站点域名）。遇到 401 则尝试备用域名。
-        if (r.status === 401 && candidates.length > 1) {
+        // 401：网关不接受 OpenAPI Key；530/404：可能是网关/路径不可用（例如 Cloudflare 1016）。都尝试备用入口。
+        if ((r.status === 401 || r.status === 404 || r.status === 530) && candidates.length > 1) {
           continue;
         }
+
 
         resp = r;
         break;

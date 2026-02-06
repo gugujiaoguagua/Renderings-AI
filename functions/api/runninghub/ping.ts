@@ -47,12 +47,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
 
   const workflowId = workflowIdKeyUsed ? pickEnvValue(env, workflowIdKeyUsed) : null;
   const runUrlOverride = runUrlKeyUsed ? pickEnvValue(env, runUrlKeyUsed) : null;
-  const runUrl = runUrlOverride ?? (workflowId ? `https://api.runninghub.cn/run/workflow/${workflowId}` : null);
+  const runUrl = runUrlOverride ?? (workflowId ? `https://www.runninghub.cn/openapi/v2/run/workflow/${workflowId}` : null);
 
   const isRunUrlValid = runUrl ? (() => {
     try {
       const u = new URL(runUrl);
-      return u.protocol === 'https:' && u.pathname.startsWith('/run/workflow/');
+      const okPath =
+        u.pathname.startsWith('/run/workflow/') ||
+        u.pathname.startsWith('/openapi/v2/run/workflow/') ||
+        u.pathname.startsWith('/call-api/run/workflow/');
+      return u.protocol === 'https:' && okPath;
     } catch {
       return false;
     }
