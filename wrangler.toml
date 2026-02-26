@@ -1,3 +1,9 @@
 name = "model-render-ai"
 compatibility_date = "2025-07-18"
 pages_build_output_dir = "dist"
+
+# D1 binding for Pages Functions
+[[d1_databases]]
+binding = "LICENSE_DB"
+database_name = "model-render-license"
+database_id = "ffb3ab83-5e6d-4085-a2e5-e563d10bbb16"
