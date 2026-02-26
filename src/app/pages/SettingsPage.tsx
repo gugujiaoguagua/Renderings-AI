@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -12,11 +12,18 @@ import {
   HelpCircle,
   MessageSquare,
   ChevronRight,
-  Database
+  Database,
+  Copy,
+  KeyRound,
+  CreditCard,
+  List,
+  CalendarCheck,
 } from 'lucide-react';
 import { Button } from '@/app/components/ui/button';
 import { Card } from '@/app/components/ui/card';
 import { Separator } from '@/app/components/ui/separator';
+import { Input } from '@/app/components/ui/input';
+import { Alert, AlertDescription } from '@/app/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,7 +41,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/app/components/ui/dialog';
-import { Input } from '@/app/components/ui/input';
 import { Avatar, AvatarFallback } from '@/app/components/ui/avatar';
 import { storageService } from '@/app/services/storage';
 import { pointsService } from '@/app/services/points';
@@ -47,60 +53,74 @@ function formatDateTime(timestamp: number) {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   });
 }
 
-const catAvatarUrl = `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-    <rect width="200" height="200" rx="100" fill="#111827"/>
-    <path d="M50 85 L35 55 L70 70 Z" fill="#F9FAFB"/>
-    <path d="M150 85 L165 55 L130 70 Z" fill="#F9FAFB"/>
-    <circle cx="70" cy="105" r="10" fill="#F9FAFB"/>
-    <circle cx="130" cy="105" r="10" fill="#F9FAFB"/>
-    <circle cx="70" cy="105" r="4" fill="#111827"/>
-    <circle cx="130" cy="105" r="4" fill="#111827"/>
-    <path d="M100 112 C92 118 92 125 100 130 C108 125 108 118 100 112 Z" fill="#FCA5A5"/>
-    <path d="M100 130 C90 135 82 133 75 126" stroke="#F9FAFB" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <path d="M100 130 C110 135 118 133 125 126" stroke="#F9FAFB" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <path d="M55 122 L30 115" stroke="#F9FAFB" stroke-width="4" stroke-linecap="round"/>
-    <path d="M55 130 L28 132" stroke="#F9FAFB" stroke-width="4" stroke-linecap="round"/>
-    <path d="M145 122 L170 115" stroke="#F9FAFB" stroke-width="4" stroke-linecap="round"/>
-    <path d="M145 130 L172 132" stroke="#F9FAFB" stroke-width="4" stroke-linecap="round"/>
-  </svg>`
-)}`;
+const POINTS_PACKAGES = [
+  { priceText: '9.9', points: 100 },
+  { priceText: '29.9', points: 300 },
+  { priceText: '49.9', points: 520 },
+  { priceText: '99', points: 1088 },
+] as const;
 
 export function SettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [showPrivacyDialog, setShowPrivacyDialog] = useState(false);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [showPointsDialog, setShowPointsDialog] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
-  const [catBurstKey, setCatBurstKey] = useState(0);
+
   const [phoneValue, setPhoneValue] = useState('');
   const [user, setUser] = useState(authService.getCurrentUser());
   const accountId = useMemo(() => authService.getAccountId(), [user]);
+
   const [balance, setBalance] = useState(pointsService.getBalance(accountId));
-  const [ledger, setLedger] = useState(pointsService.getLedger(accountId, 10));
-  const [customRechargeAmount, setCustomRechargeAmount] = useState('1');
-  const burstTimerRef = useRef<number | null>(null);
+  const [ledger, setLedger] = useState(pointsService.getLedger(accountId, 20));
+
+  const [activationCode, setActivationCode] = useState('');
+  const [redeemFeedback, setRedeemFeedback] = useState<null | { ok: boolean; message: string }>(null);
+  const [redeemLoading, setRedeemLoading] = useState(false);
 
   const refreshPoints = (targetAccountId = accountId) => {
     setBalance(pointsService.getBalance(targetAccountId));
-    setLedger(pointsService.getLedger(targetAccountId, 10));
+    setLedger(pointsService.getLedger(targetAccountId, 20));
   };
 
   useEffect(() => {
     refreshPoints();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
   useEffect(() => {
-    if (location.state?.openPoints) {
+    if ((location.state as any)?.openPoints) {
       setShowPointsDialog(true);
     }
   }, [location.state]);
+
+  const copyText = async (text: string, successMessage: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(successMessage);
+    } catch {
+      try {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.style.position = 'fixed';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        toast.success(successMessage);
+      } catch {
+        toast.error('复制失败，请手动复制');
+      }
+    }
+  };
 
   const handleClearCache = () => {
     storageService.clearAllData();
@@ -108,80 +128,121 @@ export function SettingsPage() {
     toast.success('缓存已清空');
   };
 
+  const handleAdminEntry = () => {
+    const secret = '9X#kP2$mQ5@Ln!8zR_vW4 H7&bL@3sK9!dP2#xM5$qN Z1!wR4*yC8(uI3^oP0)tL';
+    const input = prompt('请输入进入指令：');
+    if (input === secret) {
+      navigate('/admin/license');
+    } else if (input !== null) {
+      toast.error('指令错误');
+    }
+  };
+
+  const handleRedeemActivationCode = async () => {
+    if (redeemLoading) return;
+    setRedeemLoading(true);
+    try {
+      const res = await pointsService.redeemActivationCode(accountId, activationCode);
+      setRedeemFeedback({ ok: res.ok, message: res.message });
+      if (res.ok) {
+        refreshPoints();
+        setActivationCode('');
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    } finally {
+      setRedeemLoading(false);
+    }
+  };
+
   const getCacheSize = () => {
     const recentImages = storageService.getRecentImages();
     const history = storageService.getHistory();
     return {
       images: recentImages.length,
-      history: history.length
+      history: history.length,
     };
   };
 
   const cacheSize = getCacheSize();
   const pointsSummary = useMemo(() => `${balance} 积分`, [balance]);
-  const hasClaimedNewbie = useMemo(() => pointsService.hasClaimedNewbie(accountId), [accountId, ledger.length]);
+  const hasClaimedNewbie = useMemo(() => pointsService.hasClaimedNewbie(accountId), [accountId]);
 
-  const handleFixedRecharge = (priceYuan: number, points: number) => {
-    const pts = Math.max(0, Math.floor(points));
-    if (pts <= 0) return;
-    pointsService.earnPoints(accountId, pts, `充值 ${priceYuan} 元`);
-    refreshPoints();
-    toast.success(`充值成功 +${pts}`);
+  const buildPurchaseMessage = (pkg: { priceText: string; points: number }) => {
+    return `购买档位：${pkg.priceText} 元 = ${pkg.points} 积分`;
   };
 
-  const calcRecharge = (amountYuan: number) => {
-    const amount = Math.max(0, Math.floor(amountYuan));
-    const base = amount * 10;
-    const bonus = amount === 10 || amount === 50 || amount === 100 ? amount : 0;
-    return { amount, base, bonus, total: base + bonus };
-  };
-
-  const handleRecharge = (amountYuan: number, allowBonus: boolean) => {
-    const amount = Math.max(0, Math.floor(amountYuan));
-    if (amount < 1) {
-      toast.error('自定义金额最低 1 元');
-      return;
-    }
-
-    const base = amount * 10;
-    const bonus = allowBonus && (amount === 10 || amount === 50 || amount === 100) ? amount : 0;
-    const total = base + bonus;
-    const title = bonus > 0 ? `充值 ${amount} 元（送 ${bonus}）` : `充值 ${amount} 元`;
-
-    pointsService.earnPoints(accountId, total, title);
-    refreshPoints();
-    toast.success(`充值成功 +${total}`);
-  };
-
-  const triggerCatBurst = () => {
-    setCatBurstKey((k) => k + 1);
-    if (burstTimerRef.current) {
-      window.clearTimeout(burstTimerRef.current);
-    }
-    burstTimerRef.current = window.setTimeout(() => {
-      setCatBurstKey(0);
-    }, 950);
+  const handleCopyPurchaseMessage = async (pkg: { priceText: string; points: number }) => {
+    await copyText(buildPurchaseMessage(pkg), '购买信息已复制');
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="border-b bg-white sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/')}
+          <Button variant="ghost" size="sm" onClick={() => navigate('/')}
           >
             <ArrowLeft className="size-4 mr-1" />
             返回
           </Button>
           <h1 className="flex-1 text-center font-semibold">设置与帮助</h1>
-          <div className="w-20" /> {/* Spacer */}
+          <div className="w-20" />
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+        <section>
+          <h2 className="text-sm font-medium text-gray-700 mb-3">激活码</h2>
+          <Card className="p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium flex items-center gap-2">
+                  <KeyRound className="size-4 text-gray-600" />
+                  账号ID（用于核销绑定）
+                </p>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  兑换需要联网；成功后积分会绑定到当前账号ID。请勿随意清理浏览器数据。
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => copyText(accountId, '账号ID已复制')}
+              >
+                <Copy className="size-4 mr-2" />
+                复制
+              </Button>
+            </div>
+
+            <div className="text-xs font-mono break-all rounded-md border bg-gray-50 p-2 text-gray-700">
+              {accountId}
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-gray-700">输入激活码</div>
+              <div className="flex gap-3">
+                <Input
+                  value={activationCode}
+                  onChange={(e) => {
+                    setRedeemFeedback(null);
+                    setActivationCode(e.target.value.slice(0, 2048));
+                  }}
+                  placeholder="例如：AIG2.xxxxx.yyyyy"
+                />
+                <Button onClick={handleRedeemActivationCode} disabled={!activationCode.trim() || redeemLoading}>
+                  {redeemLoading ? '兑换中…' : '兑换'}
+                </Button>
+              </div>
+              {redeemFeedback && (
+                <Alert variant={redeemFeedback.ok ? 'default' : 'destructive'}>
+                  <AlertDescription>{redeemFeedback.message}</AlertDescription>
+                </Alert>
+              )}
+              <div className="text-xs text-gray-500">
+                如提示“当前环境未连接兑换服务”，请用 Cloudflare Pages 部署环境（或本地 `wrangler pages dev`）再兑换。
+              </div>
+            </div>
+          </Card>
+        </section>
+
         <section>
           <h2 className="text-sm font-medium text-gray-700 mb-3">账号</h2>
           <Card className="divide-y">
@@ -198,12 +259,13 @@ export function SettingsPage() {
                 <div className="text-left">
                   <p className="font-medium">{user ? user.displayName : '未登录'}</p>
                   <p className="text-xs text-gray-600 mt-0.5">
-                    {user ? (user.provider === 'wechat' ? '微信登录' : '手机号登录') : '登录后可按账号领取新手礼包'}
+                    {user ? (user.provider === 'wechat' ? '微信登录' : '手机号登录') : '未登录时会使用本机账号ID'}
                   </p>
                 </div>
               </div>
               <ChevronRight className="size-5 text-gray-400" />
             </button>
+
             {user && (
               <button
                 className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
@@ -217,7 +279,7 @@ export function SettingsPage() {
                   <LogOut className="size-5 text-gray-600" />
                   <div className="text-left">
                     <p className="font-medium">退出登录</p>
-                    <p className="text-xs text-gray-600 mt-0.5">切换到访客模式</p>
+                    <p className="text-xs text-gray-600 mt-0.5">切换到本机账号ID</p>
                   </div>
                 </div>
                 <ChevronRight className="size-5 text-gray-400" />
@@ -231,15 +293,16 @@ export function SettingsPage() {
           <Card className="divide-y">
             <button
               className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-              onClick={() => setShowPointsDialog(true)}
+              onClick={() => {
+                refreshPoints();
+                setShowPointsDialog(true);
+              }}
             >
               <div className="flex items-center gap-3">
                 <Coins className="size-5 text-gray-600" />
                 <div className="text-left">
                   <p className="font-medium">积分中心</p>
-                  <p className="text-xs text-gray-600 mt-0.5">
-                    {pointsSummary}
-                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5">{pointsSummary}</p>
                 </div>
               </div>
               <ChevronRight className="size-5 text-gray-400" />
@@ -247,7 +310,6 @@ export function SettingsPage() {
           </Card>
         </section>
 
-        {/* Privacy & Data */}
         <section>
           <h2 className="text-sm font-medium text-gray-700 mb-3">隐私与数据</h2>
           <Card className="divide-y">
@@ -259,9 +321,7 @@ export function SettingsPage() {
                 <Shield className="size-5 text-gray-600" />
                 <div className="text-left">
                   <p className="font-medium">隐私说明</p>
-                  <p className="text-xs text-gray-600 mt-0.5">
-                    了解数据如何使用和存储
-                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5">了解数据如何使用和存储</p>
                 </div>
               </div>
               <ChevronRight className="size-5 text-gray-400" />
@@ -285,7 +345,6 @@ export function SettingsPage() {
           </Card>
         </section>
 
-        {/* Help & Support */}
         <section>
           <h2 className="text-sm font-medium text-gray-700 mb-3">帮助与支持</h2>
           <Card className="divide-y">
@@ -297,9 +356,7 @@ export function SettingsPage() {
                 <HelpCircle className="size-5 text-gray-600" />
                 <div className="text-left">
                   <p className="font-medium">常见问题</p>
-                  <p className="text-xs text-gray-600 mt-0.5">
-                    查看使用帮助和解答
-                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5">查看使用帮助和解答</p>
                 </div>
               </div>
               <ChevronRight className="size-5 text-gray-400" />
@@ -313,9 +370,7 @@ export function SettingsPage() {
                 <MessageSquare className="size-5 text-gray-600" />
                 <div className="text-left">
                   <p className="font-medium">意见反馈</p>
-                  <p className="text-xs text-gray-600 mt-0.5">
-                    告诉我们你的想法
-                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5">告诉我们你的想法</p>
                 </div>
               </div>
               <ChevronRight className="size-5 text-gray-400" />
@@ -323,20 +378,25 @@ export function SettingsPage() {
           </Card>
         </section>
 
-        {/* About */}
         <section>
           <Card className="p-4 text-center space-y-2">
-            <p className="text-sm text-gray-600">AI 图片生成器</p>
+            <p className="text-sm text-gray-600">模型渲染 AI</p>
             <p className="text-xs text-gray-500">版本 1.0.0</p>
             <Separator className="my-2" />
             <p className="text-xs text-gray-500">
-              使用先进的 AI 技术，基于你的图片智能生成新作品
+              使用先进的 AI 技术，完成模型渲染与图片处理
+              <button
+                type="button"
+                onClick={handleAdminEntry}
+                aria-label="admin-entry"
+                className="ml-1 inline-block w-6 h-6 align-middle opacity-0"
+                title="Admin"
+              />
             </p>
           </Card>
         </section>
       </main>
 
-      {/* Clear Cache Dialog */}
       <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -345,125 +405,61 @@ export function SettingsPage() {
               这将删除：
               <ul className="list-disc list-inside mt-2 space-y-1">
                 <li>{cacheSize.images} 张最近使用的图片</li>
-                <li>{cacheSize.history} 条生成历史记录</li>
+                <li>{cacheSize.history} 条历史记录</li>
               </ul>
               <p className="mt-2">此操作无法撤销。</p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleClearCache}>
-              确认清空
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleClearCache}>确认清空</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Privacy Dialog */}
       <Dialog open={showPrivacyDialog} onOpenChange={setShowPrivacyDialog}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>隐私说明</DialogTitle>
-            <DialogDescription>
-              我们重视你的隐私和数据安全
-            </DialogDescription>
+            <DialogDescription>我们重视你的隐私和数据安全</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-sm">
             <section>
               <h3 className="font-semibold mb-2">数据存储</h3>
               <ul className="space-y-1 text-gray-600">
-                <li>• 最近使用的图片和生成历史仅保存在本机</li>
+                <li>• 最近使用的图片和历史记录仅保存在本机</li>
                 <li>• 不会上传到任何服务器（除非进行生成）</li>
                 <li>• 你可以随时清空缓存</li>
               </ul>
             </section>
 
             <section>
-              <h3 className="font-semibold mb-2">生成过程</h3>
+              <h3 className="font-semibold mb-2">兑换与积分</h3>
               <ul className="space-y-1 text-gray-600">
-                <li>• 生成时图片会临时上传到云端处理</li>
-                <li>• 处理完成后自动删除，不会永久存储</li>
-                <li>• 传输过程使用加密保护</li>
-              </ul>
-            </section>
-
-            <section>
-              <h3 className="font-semibold mb-2">数据使用</h3>
-              <ul className="space-y-1 text-gray-600">
-                <li>• 仅用于 AI 模型理解和生成</li>
-                <li>• 不会用于其他任何目的</li>
-                <li>• 不会与第三方分享</li>
-              </ul>
-            </section>
-
-            <section>
-              <h3 className="font-semibold mb-2">注意事项</h3>
-              <ul className="space-y-1 text-gray-600">
-                <li>• 请勿上传包含个人隐私信息的图片</li>
-                <li>• 请勿上传受版权保护的内容</li>
-                <li>• 请遵守社区规范和使用条款</li>
+                <li>• 激活码兑换需要联网核销</li>
+                <li>• 积分余额与明细保存在本机</li>
               </ul>
             </section>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Help Dialog */}
       <Dialog open={showHelpDialog} onOpenChange={setShowHelpDialog}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>常见问题</DialogTitle>
-            <DialogDescription>
-              快速解答常见疑问
-            </DialogDescription>
+            <DialogDescription>快速解答常见疑问</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-sm">
             <section>
               <h3 className="font-semibold mb-2">如何开始？</h3>
-              <p className="text-gray-600">
-                在首页选择一张图片（从相册、拍照或示例图），系统会自动理解图片内容并生成描述，确认后即可开始生成。
-              </p>
-            </section>
-
-            <section>
-              <h3 className="font-semibold mb-2">生成需要多久？</h3>
-              <p className="text-gray-600">
-                通常需要 10-30 秒。生成过程中可以选择后台等待，也可以随时取消。
-              </p>
-            </section>
-
-            <section>
-              <h3 className="font-semibold mb-2">如果识别不准确？</h3>
-              <p className="text-gray-600">
-                在确认页面可以点击"不准确？"进行简单纠正，选择正确的内容类型即可。
-              </p>
-            </section>
-
-            <section>
-              <h3 className="font-semibold mb-2">支持哪些图片格式？</h3>
-              <p className="text-gray-600">
-                支持 JPG、PNG、WebP 等常见格式，图片大小不超过 10MB。
-              </p>
-            </section>
-
-            <section>
-              <h3 className="font-semibold mb-2">生成失败怎么办？</h3>
-              <p className="text-gray-600">
-                生成失败不会产生任何费用，可以直接重试。如果多次失败，建议检查网络或换一张图片。
-              </p>
-            </section>
-
-            <section>
-              <h3 className="font-semibold mb-2">历史记录保存多久？</h3>
-              <p className="text-gray-600">
-                历史记录仅保存在本机，最多保存 20 条。可以在设置中清空所有记录。
-              </p>
+              <p className="text-gray-600">在首页进入“模型渲染/图片修复”，上传图片后即可开始渲染。</p>
             </section>
 
             <section>
               <h3 className="font-semibold mb-2">积分是什么？</h3>
               <p className="text-gray-600">
-                积分用于完成生成操作。规则：按生成耗时计费，1 分钟 1 积分（向上取整），最低收取 1 积分；取消不会扣费。
+                积分用于完成生成/渲染操作。规则：按生成耗时计费，1 分钟 1 积分（向上取整），最低 1 积分；取消不会扣费。积分通过“激活码兑换”入账。
               </p>
             </section>
           </div>
@@ -474,32 +470,16 @@ export function SettingsPage() {
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>积分中心</DialogTitle>
-            <DialogDescription>
-              当前余额 {balance} 积分
-            </DialogDescription>
+            <DialogDescription>当前余额 {balance} 积分</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 text-sm">
             <Card className="p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">账号</div>
-                {user ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setShowAuthDialog(true)}
-                  >
-                    切换
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setShowAuthDialog(true)}
-                  >
-                    登录
-                  </Button>
-                )}
+                <Button size="sm" variant="ghost" onClick={() => setShowAuthDialog(true)}>
+                  {user ? '切换' : '登录'}
+                </Button>
               </div>
               <div className="flex items-center gap-3">
                 <Avatar className="size-9">
@@ -508,60 +488,18 @@ export function SettingsPage() {
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <div className="font-medium">{user ? user.displayName : '访客'}</div>
+                  <div className="font-medium">{user ? user.displayName : '本机账号'}</div>
                   <div className="text-xs text-gray-600 mt-0.5">
-                    {user ? (user.provider === 'wechat' ? '微信登录' : '手机号登录') : '未登录仅能使用访客积分'}
+                    {user ? (user.provider === 'wechat' ? '微信登录' : '手机号登录') : '未登录使用本机账号ID'}
                   </div>
                 </div>
               </div>
-              {!user && (
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      const nextUser = authService.loginWeChat();
-                      setUser(nextUser);
-                      toast.success('微信登录成功');
-                    }}
-                  >
-                    微信登录
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowAuthDialog(true)}
-                  >
-                    手机号登录
-                  </Button>
-                </div>
-              )}
             </Card>
 
             <Card className="p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-medium">新手与签到</div>
-                {hasClaimedNewbie ? (
-                  <div className="relative">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={triggerCatBurst}
-                    >
-                      解压一下
-                    </Button>
-                    {catBurstKey > 0 && (
-                      <span
-                        key={catBurstKey}
-                        className="pointer-events-none absolute left-1/2 -top-2 z-10 animate-cat-pop"
-                      >
-                        <img
-                          src={catAvatarUrl}
-                          alt="cat"
-                          className="size-10 rounded-full shadow-md"
-                        />
-                      </span>
-                    )}
-                  </div>
-                ) : (
+                {!hasClaimedNewbie ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -583,89 +521,89 @@ export function SettingsPage() {
                     <Gift className="size-4 mr-1" />
                     领新手礼包
                   </Button>
+                ) : (
+                  <div className="text-xs text-gray-500">新手礼包已领取</div>
                 )}
               </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   variant="outline"
                   onClick={() => {
-                    pointsService.earnPoints(accountId, 3, '每日签到');
+                    const res = pointsService.checkIn(accountId);
                     refreshPoints();
-                    toast.success('签到成功 +3');
+                    if (res.ok) {
+                      toast.success('签到成功 +3');
+                    } else {
+                      toast.info(res.reason === 'limit' ? '签到已达上限' : '今天已签到');
+                    }
                   }}
                 >
-                  每日签到 +3
+                  <CalendarCheck className="size-4 mr-1" />
+                  每日签到
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    refreshPoints();
+                    toast.success('已刷新');
+                  }}
+                >
+                  <List className="size-4 mr-1" />
+                  刷新
                 </Button>
               </div>
             </Card>
 
             <Card className="p-4 space-y-3">
-              <div className="font-medium">充值</div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => handleFixedRecharge(0.98, 10)}>
-                  充 0.98 元 得 10
-                </Button>
-                <Button variant="outline" onClick={() => handleRecharge(10, true)}>
-                  充 10 元 得 {calcRecharge(10).total}
-                </Button>
-                <Button variant="outline" onClick={() => handleRecharge(50, true)}>
-                  充 50 元 得 {calcRecharge(50).total}
-                </Button>
-                <Button variant="outline" onClick={() => handleRecharge(100, true)}>
-                  充 100 元 得 {calcRecharge(100).total}
-                </Button>
+              <div className="font-medium flex items-center gap-2">
+                <CreditCard className="size-4" />
+                购买积分
               </div>
 
-              <div className="flex gap-2 items-center">
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  step={1}
-                  value={customRechargeAmount}
-                  onChange={(e) => setCustomRechargeAmount(e.target.value)}
-                />
-                <Button
-                  onClick={() => {
-                    const n = Number(customRechargeAmount);
-                    if (!Number.isFinite(n)) {
-                      toast.error('请输入正确的金额');
-                      return;
-                    }
-                    handleRecharge(n, false);
-                  }}
-                >
-                  自定义充值
-                </Button>
-              </div>
               <div className="text-xs text-gray-600">
-                自定义金额最低 1 元，不参与赠送
+                选择档位后复制购买信息发给客服，付款后客服返回激活码，你再回到上方“激活码”兑换入账。
               </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {POINTS_PACKAGES.map((pkg) => (
+                  <Card key={pkg.priceText} className="p-3">
+                    <div className="space-y-2">
+                      <div className="font-semibold">{pkg.priceText} 元</div>
+                      <div className="text-xs text-gray-500">{pkg.points} 积分</div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs px-1 h-8"
+                        onClick={() => handleCopyPurchaseMessage(pkg)}
+                      >
+                        复制购买信息
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="text-xs text-gray-500">提示：本页面不会直接给你加积分，积分只会在兑换激活码后入账。</div>
             </Card>
 
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="font-medium">积分明细</div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    pointsService.resetAll();
-                    refreshPoints();
-                    toast.success('已重置积分数据');
-                  }}
-                >
-                  重置
+                <Button size="sm" variant="ghost" onClick={() => refreshPoints()}>
+                  刷新
                 </Button>
               </div>
+
               <Card className="divide-y">
                 {ledger.length === 0 ? (
                   <div className="px-4 py-4 text-gray-600">暂无记录</div>
                 ) : (
                   ledger.map((item) => (
                     <div key={item.id} className="px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-medium">{item.title}</div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{item.title}</div>
                         <div className="text-xs text-gray-600 mt-0.5">{formatDateTime(item.timestamp)}</div>
                       </div>
                       <div className={item.type === 'earn' ? 'text-green-600 font-medium' : 'text-gray-900 font-medium'}>
@@ -680,11 +618,8 @@ export function SettingsPage() {
             <Card className="p-4 space-y-1">
               <div className="font-medium">积分规则</div>
               <div className="text-gray-600">按生成耗时计费：1 分钟 1 积分（向上取整），最低 1 积分</div>
-              <div className="text-gray-600">取消不会扣费；积分与明细仅保存在本机</div>
-              <div className="text-gray-600">首档：0.98 元 = 10 积分</div>
-              <div className="text-gray-600">自定义充值比例：1 元 = 10 积分</div>
-              <div className="text-gray-600">赠送规则：充 10 元送 10，充 50 元送 50，充 100 元送 100</div>
-              <div className="text-gray-600">自定义金额最低 1 元，不参与赠送</div>
+              <div className="text-gray-600">取消不会扣费；生成失败不扣费</div>
+              <div className="text-gray-600">积分通过激活码兑换入账；激活码为一次性、限时有效</div>
             </Card>
           </div>
         </DialogContent>
@@ -694,9 +629,7 @@ export function SettingsPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>账号登录</DialogTitle>
-            <DialogDescription>
-              可选择微信登录或手机号登录
-            </DialogDescription>
+            <DialogDescription>可选择微信登录或手机号登录</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 text-sm">

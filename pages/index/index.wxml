@@ -1,0 +1,21 @@
+<view class="page">
+  <view class="bar">
+    <input
+      class="input"
+      value="{{urlInput}}"
+      placeholder="输入 H5 地址，如 http://192.168.1.10:5173"
+      bindinput="onUrlInput"
+      confirm-type="go"
+    />
+    <button size="mini" type="primary" bindtap="onLoadUrl">加载</button>
+    <button size="mini" bindtap="onPasteAndLoad">粘贴</button>
+  </view>
+
+  <view class="tips">
+    <text>真机预览请用电脑局域网 IP（不要用 127.0.0.1）。</text>
+  </view>
+
+  <view class="web">
+    <web-view src="{{url}}"></web-view>
+  </view>
+</view>

@@ -1,4 +1,5 @@
 const AUTH_KEY = 'ai-generator-auth-user';
+const DEVICE_ID_KEY = 'ai-generator-device-id';
 
 export type AuthProvider = 'wechat' | 'phone';
 
@@ -39,6 +40,18 @@ function normalizePhone(phone: string) {
   return digits;
 }
 
+function getOrCreateDeviceId(): string {
+  try {
+    const existing = localStorage.getItem(DEVICE_ID_KEY);
+    if (existing && typeof existing === 'string' && existing.length >= 8) return existing;
+    const created = (globalThis.crypto?.randomUUID?.() ?? `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    localStorage.setItem(DEVICE_ID_KEY, created);
+    return created;
+  } catch {
+    return `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+}
+
 export const authService = {
   getCurrentUser(): AuthUser | null {
     try {
@@ -50,7 +63,7 @@ export const authService = {
 
   getAccountId(): string {
     const user = this.getCurrentUser();
-    if (!user) return 'guest';
+    if (!user) return `device:${getOrCreateDeviceId()}`;
     return `${user.provider}:${user.id}`;
   },
 
@@ -59,7 +72,7 @@ export const authService = {
       provider: 'wechat',
       id: 'demo',
       displayName: '微信用户',
-      avatarSeed: 'wechat-demo'
+      avatarSeed: 'wechat-demo',
     };
     setUserRaw(user);
     return user;
@@ -72,7 +85,7 @@ export const authService = {
       provider: 'phone',
       id: normalized,
       displayName: `手机用户 ${normalized.slice(-4)}`,
-      avatarSeed: `phone-${normalized}`
+      avatarSeed: `phone-${normalized}`,
     };
     setUserRaw(user);
     return user;
@@ -80,5 +93,5 @@ export const authService = {
 
   logout() {
     setUserRaw(null);
-  }
+  },
 };
