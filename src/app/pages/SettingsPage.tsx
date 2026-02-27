@@ -130,7 +130,7 @@ export function SettingsPage() {
 
   const handleAdminEntry = () => {
     const secret = '9X#kP2$mQ5@Ln!8zR_vW4 H7&bL@3sK9!dP2#xM5$qN Z1!wR4*yC8(uI3^oP0)tL';
-    const input = prompt('请输入进入指令：');
+    const input = prompt('请输入进入指令（非后台口令）：');
     if (input === secret) {
       navigate('/admin/license');
     } else if (input !== null) {

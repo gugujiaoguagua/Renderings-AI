@@ -217,6 +217,12 @@ export function AdminLicensePage() {
       });
 
       const data = (await resp.json().catch(() => null)) as any;
+
+      if (resp.status === 404 || resp.status === 405) {
+        toast.error('当前环境未连接兑换服务，请使用已部署环境或本地 wrangler pages dev');
+        return;
+      }
+
       if (!resp.ok || !data || typeof data !== 'object' || !data.ok) {
         const msg = typeof data?.message === 'string' ? data.message : resp.status === 401 ? '口令错误' : '生成失败';
         toast.error(msg);
@@ -266,6 +272,12 @@ export function AdminLicensePage() {
       });
 
       const data = (await resp.json().catch(() => null)) as any;
+
+      if (resp.status === 404 || resp.status === 405) {
+        toast.error('当前环境未连接兑换服务，请使用已部署环境或本地 wrangler pages dev');
+        return;
+      }
+
       if (!resp.ok || !data || typeof data !== 'object' || !data.ok) {
         const msg = typeof data?.message === 'string' ? data.message : resp.status === 401 ? '口令错误' : '查询失败';
         toast.error(msg);
