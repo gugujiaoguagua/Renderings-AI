@@ -211,6 +211,18 @@ export function parseError(error: unknown): GenerationError {
   ) {
     const statusText = Number.isFinite(upstreamStatus) && upstreamStatus > 0 ? `（上游状态码 ${upstreamStatus}）` : '';
     const detail = nestedMessage || structuredHint;
+    const stage = typeof structured?.stage === 'string' ? structured.stage : '';
+
+    if (upstreamStatus === 401) {
+      return {
+        type: 'permission',
+        message: `RunningHub 鉴权失败${stage ? `（${stage}阶段）` : ''}`,
+        action:
+          detail ||
+          '请检查 RUNNINGHUB_API_KEY 是否为 OpenAPI Key，且与 RUNNINGHUB_UPLOAD_URL/RUNNINGHUB_WORKFLOW_RUN_URL 所在站点（.cn 或 .ai）一致'
+      };
+    }
+
     return {
       type: 'service-busy',
       message: `RunningHub 服务暂不可用${statusText}`,

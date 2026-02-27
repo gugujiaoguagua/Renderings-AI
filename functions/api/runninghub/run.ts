@@ -198,92 +198,176 @@ async function uploadImageToRunningHub(options: {
   const explicitUseBearer =
     pickEnvValue(env, `RUNNINGHUB_UPLOAD_USE_BEARER${suffix}`) ?? pickEnvValue(env, 'RUNNINGHUB_UPLOAD_USE_BEARER');
 
-  const useBearer = (() => {
-    if (explicitUseBearer) return explicitUseBearer.trim().toLowerCase() === 'true';
-    return !hasRhQuery(uploadUrl);
-  })();
+  const parseHostsFromEnv = (value: string | null) => {
+    if (!value) return [] as string[];
+    return value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => s.replace(/^https?:\/\//i, '').replace(/\/$/, ''));
+  };
 
-  const hp = safeHostPath(uploadUrl);
-  console.log('[runninghub/run] upload start', {
-    workflowType,
-    uploadUrlHost: hp.host,
-    uploadUrlPath: hp.path,
-    useBearer,
-    fileSize: file.size,
-    fileType: file.type
-  });
+  const buildUploadCandidates = () => {
+    const out: string[] = [];
+    const add = (u: string | null) => {
+      if (!u) return;
+      if (out.includes(u)) return;
+      out.push(u);
+    };
+
+    add(uploadUrl);
+
+    try {
+      const u = new URL(uploadUrl);
+      const path = u.pathname || '/openapi/v2/upload/image';
+      if (u.host === 'www.runninghub.cn') add(`https://api.runninghub.cn${path}`);
+      if (u.host === 'api.runninghub.cn') add(`https://www.runninghub.cn${path}`);
+      if (u.host === 'www.runninghub.ai') add(`https://api.runninghub.ai${path}`);
+      if (u.host === 'api.runninghub.ai') add(`https://www.runninghub.ai${path}`);
+
+      if (path === '/upload/image') {
+        add(`https://${u.host}/openapi/v2/upload/image`);
+      }
+    } catch {
+      add('https://www.runninghub.cn/openapi/v2/upload/image');
+      add('https://api.runninghub.cn/openapi/v2/upload/image');
+    }
+
+    const extraHosts = parseHostsFromEnv(pickEnvValue(env, `RUNNINGHUB_UPLOAD_HOSTS${suffix}`) ?? pickEnvValue(env, 'RUNNINGHUB_UPLOAD_HOSTS'));
+    for (const host of extraHosts) {
+      add(`https://${host}/openapi/v2/upload/image`);
+      add(`https://${host}/upload/image`);
+    }
+
+    return out;
+  };
+
+  const authModes = (targetUrl: string): Array<'bearer' | 'x-api-key' | 'none'> => {
+    if (explicitUseBearer) {
+      return explicitUseBearer.trim().toLowerCase() === 'true' ? ['bearer'] : ['none'];
+    }
+    if (hasRhQuery(targetUrl)) return ['none', 'x-api-key', 'bearer'];
+    return ['bearer', 'x-api-key', 'none'];
+  };
 
   const upstreamForm = new FormData();
   upstreamForm.append(uploadField, file, file.name || 'image');
 
-  const headers: Record<string, string> = {
-    accept: 'application/json'
-  };
-  if (useBearer) {
-    headers.Authorization = `Bearer ${apiKey}`;
-    headers['X-API-KEY'] = apiKey;
+  const candidates = buildUploadCandidates();
+  const attempts: Array<{ url: string; authMode: 'bearer' | 'x-api-key' | 'none'; status?: number; error?: string }> = [];
+
+  console.log('[runninghub/run] upload start', {
+    workflowType,
+    candidates,
+    explicitUseBearer,
+    fileSize: file.size,
+    fileType: file.type
+  });
+
+  for (const targetUrl of candidates) {
+    const hp = safeHostPath(targetUrl);
+
+    for (const authMode of authModes(targetUrl)) {
+      const headers: Record<string, string> = { accept: 'application/json' };
+      if (authMode === 'bearer') {
+        headers.Authorization = `Bearer ${apiKey}`;
+        headers['X-API-KEY'] = apiKey;
+      } else if (authMode === 'x-api-key') {
+        headers['X-API-KEY'] = apiKey;
+      }
+
+      let resp: Response;
+      try {
+        resp = await fetch(targetUrl, {
+          method: 'POST',
+          headers,
+          body: upstreamForm
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        attempts.push({ url: targetUrl, authMode, error: message });
+        continue;
+      }
+
+      const text = await resp.text();
+      let data: UploadImageResponse | null = null;
+      try {
+        data = JSON.parse(text) as UploadImageResponse;
+      } catch {
+        data = null;
+      }
+
+      attempts.push({ url: targetUrl, authMode, status: resp.status });
+
+      if (!resp.ok) {
+        if (resp.status === 401 || resp.status === 404 || resp.status === 530) {
+          continue;
+        }
+
+        const e = {
+          error: 'runninghub-error',
+          stage: 'upload',
+          upstreamStatus: resp.status,
+          uploadUrlHost: hp.host,
+          uploadUrlPath: hp.path,
+          body: data ?? text,
+          attempts
+        };
+        console.log('[runninghub/run] upload upstream not ok', {
+          upstreamStatus: resp.status,
+          uploadUrlHost: hp.host,
+          uploadUrlPath: hp.path,
+          bodyBytes: text.length,
+          attempts
+        });
+        throw Object.assign(new Error('upload-upstream'), e);
+      }
+
+      const parsed = parseUploadResponse(data);
+      if (!parsed.fileKey) {
+        const e = {
+          error: 'runninghub-invalid-response',
+          stage: 'upload',
+          uploadUrlHost: hp.host,
+          uploadUrlPath: hp.path,
+          attempts
+        };
+        console.log('[runninghub/run] upload invalid response', e);
+        throw Object.assign(new Error('upload-invalid-response'), e);
+      }
+
+      return parsed;
+    }
   }
 
-  let resp: Response;
-  try {
-    resp = await fetch(uploadUrl, {
-      method: 'POST',
-      headers,
-      body: upstreamForm
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  const last = attempts[attempts.length - 1];
+  if (last?.error) {
     const e = {
       error: 'runninghub-network',
       stage: 'upload',
-      message,
-      uploadUrlHost: hp.host,
-      uploadUrlPath: hp.path
+      message: last.error,
+      uploadUrlHost: null,
+      uploadUrlPath: null,
+      attempts
     };
     console.log('[runninghub/run] upload network error', e);
     throw Object.assign(new Error('upload-network'), e);
   }
 
-  const text = await resp.text();
-  let data: UploadImageResponse | null = null;
-  try {
-    data = JSON.parse(text) as UploadImageResponse;
-  } catch {
-    data = null;
-  }
-
-  if (!resp.ok) {
-    const e = {
-      error: 'runninghub-error',
-      stage: 'upload',
-      upstreamStatus: resp.status,
-      uploadUrlHost: hp.host,
-      uploadUrlPath: hp.path,
-      body: data ?? text
-    };
-    console.log('[runninghub/run] upload upstream not ok', {
-      upstreamStatus: resp.status,
-      uploadUrlHost: hp.host,
-      uploadUrlPath: hp.path,
-      bodyBytes: text.length
-    });
-    throw Object.assign(new Error('upload-upstream'), e);
-  }
-
-  const parsed = parseUploadResponse(data);
-  if (!parsed.fileKey) {
-    const e = {
-      error: 'runninghub-invalid-response',
-      stage: 'upload',
-      uploadUrlHost: hp.host,
-      uploadUrlPath: hp.path
-    };
-    console.log('[runninghub/run] upload invalid response', e);
-    throw Object.assign(new Error('upload-invalid-response'), e);
-  }
-
-  return parsed;
+  const fallbackHp = safeHostPath(uploadUrl);
+  const e = {
+    error: 'runninghub-error',
+    stage: 'upload',
+    upstreamStatus: last?.status ?? 401,
+    uploadUrlHost: fallbackHp.host,
+    uploadUrlPath: fallbackHp.path,
+    message: 'upload-upstream',
+    attempts
+  };
+  console.log('[runninghub/run] upload exhausted', e);
+  throw Object.assign(new Error('upload-upstream'), e);
 }
+
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: Record<string, unknown> }) => {
   try {
@@ -803,10 +887,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: R
             upstreamStatus: e.upstreamStatus ?? null,
             uploadUrlHost: e.uploadUrlHost ?? null,
             uploadUrlPath: e.uploadUrlPath ?? null,
-            message: typeof e.message === 'string' ? e.message : 'upload-failed'
+            message: typeof e.message === 'string' ? e.message : 'upload-failed',
+            attempts: Array.isArray(e.attempts) ? e.attempts : undefined
           },
           { status: 502 }
         );
+
       }
     }
 
