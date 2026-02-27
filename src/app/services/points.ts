@@ -120,8 +120,8 @@ function getBalanceRaw(accountId: string) {
   const key = balanceKey(accountId);
   const saved = localStorage.getItem(key);
   if (saved === null) {
-    localStorage.setItem(key, '20');
-    return 20;
+    localStorage.setItem(key, '0');
+    return 0;
   }
   const n = Number(saved);
   return Number.isFinite(n) ? n : 0;

@@ -236,9 +236,6 @@ export function SettingsPage() {
                   <AlertDescription>{redeemFeedback.message}</AlertDescription>
                 </Alert>
               )}
-              <div className="text-xs text-gray-500">
-                请粘贴完整激活码（不要带前后引号/句号/感叹号）；如提示“当前环境未连接兑换服务”，请用 Cloudflare Pages 部署环境（或本地 `wrangler pages dev`）再兑换。
-              </div>
             </div>
           </Card>
         </section>
@@ -459,7 +456,7 @@ export function SettingsPage() {
             <section>
               <h3 className="font-semibold mb-2">积分是什么？</h3>
               <p className="text-gray-600">
-                积分用于完成生成/渲染操作。规则：按生成耗时计费，1 分钟 1 积分（向上取整），最低 1 积分；取消不会扣费。积分通过“激活码兑换”入账。
+                积分用于完成生成/渲染操作。规则：按生成耗时计费，1 分钟 5 积分（向上取整），最低 5 积分；取消不会扣费。登录后可通过新手礼包、每日签到或激活码兑换获得积分。
               </p>
             </section>
           </div>
@@ -530,6 +527,11 @@ export function SettingsPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
+                    if (!user) {
+                      toast.info('请先登录后签到');
+                      setShowAuthDialog(true);
+                      return;
+                    }
                     const res = pointsService.checkIn(accountId);
                     refreshPoints();
                     if (res.ok) {
@@ -585,7 +587,7 @@ export function SettingsPage() {
                 ))}
               </div>
 
-              <div className="text-xs text-gray-500">提示：本页面不会直接给你加积分，积分只会在兑换激活码后入账。</div>
+              <div className="text-xs text-gray-500">提示：初始积分为 0。登录后可通过新手礼包、每日签到或激活码兑换获得积分。</div>
             </Card>
 
             <section className="space-y-2">
@@ -617,7 +619,7 @@ export function SettingsPage() {
 
             <Card className="p-4 space-y-1">
               <div className="font-medium">积分规则</div>
-              <div className="text-gray-600">按生成耗时计费：1 分钟 1 积分（向上取整），最低 1 积分</div>
+              <div className="text-gray-600">按生成耗时计费：1 分钟 5 积分（向上取整），最低 5 积分</div>
               <div className="text-gray-600">取消不会扣费；生成失败不扣费</div>
               <div className="text-gray-600">积分通过激活码兑换入账；激活码为一次性、限时有效</div>
             </Card>

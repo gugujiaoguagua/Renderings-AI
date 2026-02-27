@@ -25,7 +25,7 @@ import { toast } from 'sonner';
 
 function calcCostPointsByMs(elapsedMs: number) {
   const minutes = Math.max(1, Math.ceil(elapsedMs / 60000));
-  return minutes;
+  return minutes * 5;
 }
 
 async function fetchAsDataUrl(url: string): Promise<string> {
@@ -216,7 +216,7 @@ export function GeneratingPage() {
       return;
     }
 
-    if (!pointsService.canSpend(accountId, 1)) {
+    if (!pointsService.canSpend(accountId, 5)) {
       toast.error('积分不足，无法开始生成');
       navigate('/settings', { state: { openPoints: true }, replace: true });
       return;
@@ -433,7 +433,7 @@ export function GeneratingPage() {
       return;
     }
 
-    if (!pointsService.canSpend(accountId, 1)) {
+    if (!pointsService.canSpend(accountId, 5)) {
       toast.error('积分不足，无法开始批量生成');
       navigate('/settings', { state: { openPoints: true }, replace: true });
       return;
@@ -448,7 +448,7 @@ export function GeneratingPage() {
       for (let i = 0; i < total; i += 1) {
         if (cancelledRef.current) return;
 
-        if (!pointsService.canSpend(accountId, 1)) {
+        if (!pointsService.canSpend(accountId, 5)) {
           toast.error('积分不足，已停止批量生成');
           navigate('/settings', { state: { openPoints: true }, replace: true });
           return;
