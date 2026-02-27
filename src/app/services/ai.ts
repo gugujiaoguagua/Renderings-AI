@@ -139,8 +139,42 @@ export async function generateImage(
 }
 
 // Error handling helper
+function parseStructuredErrorPayload(errorMessage: string): any | null {
+  if (!errorMessage || errorMessage[0] !== '{') return null;
+  try {
+    const obj = JSON.parse(errorMessage) as any;
+    return obj && typeof obj === 'object' ? obj : null;
+  } catch {
+    return null;
+  }
+}
+
+function pickNestedErrorMessage(payload: any): string {
+  const direct = typeof payload?.message === 'string' ? payload.message.trim() : '';
+  if (direct) return direct;
+
+  const body = payload?.body;
+  const bodyErrorMessage = typeof body?.errorMessage === 'string' ? body.errorMessage.trim() : '';
+  if (bodyErrorMessage) return bodyErrorMessage;
+
+  const bodyFailedReason =
+    typeof body?.failedReason === 'string'
+      ? body.failedReason.trim()
+      : body?.failedReason && typeof body.failedReason === 'object'
+        ? JSON.stringify(body.failedReason)
+        : '';
+  if (bodyFailedReason) return bodyFailedReason;
+
+  return '';
+}
+
 export function parseError(error: unknown): GenerationError {
   const errorMessage = error instanceof Error ? error.message : 'unknown';
+  const structured = parseStructuredErrorPayload(errorMessage);
+  const structuredError = typeof structured?.error === 'string' ? structured.error : '';
+  const structuredHint = typeof structured?.hint === 'string' ? structured.hint : '';
+  const upstreamStatus = Number(structured?.upstreamStatus);
+  const nestedMessage = pickNestedErrorMessage(structured);
 
   if (errorMessage.includes('TOKEN_INVALID')) {
     return {
@@ -166,11 +200,21 @@ export function parseError(error: unknown): GenerationError {
     };
   }
 
-  if (errorMessage.includes('runninghub-error') || errorMessage.includes('runninghub-response-error')) {
+  if (
+    structuredError === 'runninghub-network' ||
+    structuredError === 'runninghub-error' ||
+    structuredError === 'runninghub-response-error' ||
+    structuredError === 'runninghub-invalid-json' ||
+    structuredError === 'runninghub-invalid-response' ||
+    errorMessage.includes('runninghub-error') ||
+    errorMessage.includes('runninghub-response-error')
+  ) {
+    const statusText = Number.isFinite(upstreamStatus) && upstreamStatus > 0 ? `（上游状态码 ${upstreamStatus}）` : '';
+    const detail = nestedMessage || structuredHint;
     return {
       type: 'service-busy',
-      message: 'RunningHub 服务返回错误',
-      action: '请在 Network 里查看 /api/runninghub/* 的 Response 内容'
+      message: `RunningHub 服务暂不可用${statusText}`,
+      action: detail || '请稍后重试；若持续失败，请检查 RunningHub 工作流是否可在其控制台直接运行'
     };
   }
 
