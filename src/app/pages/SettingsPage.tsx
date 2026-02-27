@@ -237,7 +237,7 @@ export function SettingsPage() {
                 </Alert>
               )}
               <div className="text-xs text-gray-500">
-                如提示“当前环境未连接兑换服务”，请用 Cloudflare Pages 部署环境（或本地 `wrangler pages dev`）再兑换。
+                请粘贴完整激活码（不要带前后引号/句号/感叹号）；如提示“当前环境未连接兑换服务”，请用 Cloudflare Pages 部署环境（或本地 `wrangler pages dev`）再兑换。
               </div>
             </div>
           </Card>

@@ -204,8 +204,20 @@ type RedeemResultV2Online =
   | { ok: true; id: string; points: number; redeemedAt: number; alreadyRedeemed: boolean }
   | { ok: false; message: string };
 
+function normalizeActivationCode(rawCode: string): string {
+  return rawCode
+    .trim()
+    .replace(/["'`“”‘’]/g, '')
+    .replace(/\s+/g, '')
+    .replace(/[^A-Za-z0-9._-]/g, '');
+}
+
+function isLikelyValidAig2Code(code: string): boolean {
+  return /^AIG2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(code);
+}
+
 async function redeemActivationCodeV2Online(rawCode: string, accountId: string): Promise<RedeemResultV2Online> {
-  const code = rawCode.replace(/\s+/g, '').trim();
+  const code = normalizeActivationCode(rawCode);
   if (!code) return { ok: false, message: '请输入激活码' };
 
   const resp = await fetch('/api/license/redeem', {
@@ -339,12 +351,12 @@ export const pointsService = {
   },
 
   async redeemActivationCode(accountId: string, code: string): Promise<{ ok: boolean; message: string; addedPoints?: number }> {
-    const normalized = code.replace(/\s+/g, '').trim();
+    const normalized = normalizeActivationCode(code);
     if (!normalized) return { ok: false, message: '请输入激活码' };
 
     const prefix = normalized.split('.')[0] ?? '';
-    if (prefix !== ACTIVATION_CODE_PREFIX_V2) {
-      return { ok: false, message: '激活码格式不正确' };
+    if (prefix !== ACTIVATION_CODE_PREFIX_V2 || !isLikelyValidAig2Code(normalized)) {
+      return { ok: false, message: '激活码格式不正确（请勿包含空格、换行或标点）' };
     }
 
     const online = await redeemActivationCodeV2Online(normalized, accountId);
