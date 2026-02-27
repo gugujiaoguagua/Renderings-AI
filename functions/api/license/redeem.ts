@@ -44,6 +44,24 @@ function safeText(value: unknown, maxLen: number) {
   return value.trim().slice(0, maxLen);
 }
 
+async function ensureLicenseRedemptionsTable(db: any) {
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS license_redemptions (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL,
+  points INTEGER NOT NULL,
+  amount_cents INTEGER,
+  issued_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  redeemed_at INTEGER NOT NULL,
+  redeemed_account_id TEXT NOT NULL
+);`
+    )
+    .run();
+}
+
+
 function tryParsePayloadV2(raw: unknown): ActivationPayloadV2 | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as any;
@@ -164,9 +182,12 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       );
     }
 
+    await ensureLicenseRedemptionsTable(db);
+
     const redeemedAt = now;
 
     // 1) Try insert as the first redeemer
+
     const insertSql = `INSERT INTO license_redemptions (id, code, points, amount_cents, issued_at, expires_at, redeemed_at, redeemed_account_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING;`;
@@ -219,7 +240,9 @@ ON CONFLICT(id) DO NOTHING;`;
       },
       { status: 409 }
     );
-  } catch {
-    return json({ ok: false, error: 'internal-error' }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown-error';
+    return json({ ok: false, error: 'internal-error', message }, { status: 500 });
   }
 }
+

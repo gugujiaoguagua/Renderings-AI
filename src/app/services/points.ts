@@ -233,12 +233,22 @@ async function redeemActivationCodeV2Online(rawCode: string, accountId: string):
   const data = (await resp.json().catch(() => null)) as any;
 
   if (!resp.ok || !data || typeof data !== 'object') {
-    const msg = typeof data?.message === 'string' ? data.message : '兑换失败，请重试';
+    const fallback = (() => {
+      const code = typeof data?.error === 'string' ? `（${data.error}）` : '';
+      const status = Number.isFinite(resp.status) && resp.status > 0 ? ` [${resp.status}]` : '';
+      return `兑换失败，请重试${code}${status}`;
+    })();
+    const msg = typeof data?.message === 'string' ? data.message : fallback;
     return { ok: false, message: msg };
   }
 
   if (!data.ok) {
-    const msg = typeof data?.message === 'string' ? data.message : '兑换失败，请重试';
+    const fallback = (() => {
+      const code = typeof data?.error === 'string' ? `（${data.error}）` : '';
+      const status = Number.isFinite(resp.status) && resp.status > 0 ? ` [${resp.status}]` : '';
+      return `兑换失败，请重试${code}${status}`;
+    })();
+    const msg = typeof data?.message === 'string' ? data.message : fallback;
     return { ok: false, message: msg };
   }
 

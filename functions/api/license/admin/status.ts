@@ -52,6 +52,24 @@ function verifyPasscode(req: Request, env: Env): boolean {
   return Boolean(got) && got === expected;
 }
 
+async function ensureLicenseRedemptionsTable(db: any) {
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS license_redemptions (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL,
+  points INTEGER NOT NULL,
+  amount_cents INTEGER,
+  issued_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  redeemed_at INTEGER NOT NULL,
+  redeemed_account_id TEXT NOT NULL
+);`
+    )
+    .run();
+}
+
+
 function tryParsePayloadV2(raw: unknown): ActivationPayloadV2 | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as any;
@@ -158,9 +176,12 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
       return json({ ok: false, error: 'missing-env', key: 'LICENSE_DB', message: '未配置 D1 数据库绑定（LICENSE_DB）' }, { status: 500 });
     }
 
+    await ensureLicenseRedemptionsTable(db);
+
     const now = Date.now();
 
     if (codeFromBody) {
+
       const publicKey = getPublicKey(context.env);
       if (!publicKey) {
         return json({ ok: false, error: 'missing-env', key: 'LICENSE_PUBLIC_KEY', message: '未配置激活码公钥' }, { status: 500 });
@@ -250,7 +271,9 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     }
 
     return json({ ok: false, error: 'bad-request', message: '请传 code 或 id' }, { status: 400 });
-  } catch {
-    return json({ ok: false, error: 'internal-error' }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown-error';
+    return json({ ok: false, error: 'internal-error', message }, { status: 500 });
   }
 }
+
