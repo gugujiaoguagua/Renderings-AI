@@ -249,18 +249,21 @@ export function AdminLicensePage() {
     }
 
     const raw = queryInput.trim();
+    const normalized = raw.replace(/\s+/g, '').trim();
     if (!raw) {
       toast.error('请输入激活码或订单号');
       return;
     }
+
 
     if (queryLoading) return;
     setQueryLoading(true);
     setQueryResult(null);
 
     try {
-      const isCode = raw.startsWith('AIG2.');
-      const body = isCode ? { code: raw } : { id: raw };
+      const isCode = (normalized.split('.')[0] ?? '') === 'AIG2' && normalized.includes('.');
+      const body = isCode ? { code: normalized } : { id: raw };
+
 
       const resp = await fetch('/api/license/admin/status', {
         method: 'POST',

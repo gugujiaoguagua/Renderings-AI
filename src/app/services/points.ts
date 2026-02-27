@@ -358,8 +358,13 @@ export const pointsService = {
     }
 
     // 已核销但本机未记录：为了防止重复加分，这里不再补入账
+    // 但用户侧不应显示“失败”，避免误解为未兑换成功。
     if (online.alreadyRedeemed) {
-      return { ok: false, message: '该激活码已被该账号兑换过（可能已在其他设备或已清理数据）' };
+      return {
+        ok: true,
+        message: '该激活码已兑换过（本机未入账，为避免重复加分不会补发）',
+        addedPoints: 0,
+      };
     }
 
     const points = online.points;
